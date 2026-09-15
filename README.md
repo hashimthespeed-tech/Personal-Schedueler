@@ -45,7 +45,10 @@ Complete and verified end-to-end against Postgres: seed, solve, render, check in
 | Training program, progression, volume gating | done, tested |
 | Database schema + seed | done |
 | Four specialists + Stage B review | done |
-| PWA: today, week, check-in, agent chat, settings | done |
+| PWA: today, week, check-in, capture, stats, settings | done |
+| Desktop hub for agent conversations | done |
+| Completion tracking, goal progress, statistics | done |
+| Task and schedule management / reset | done |
 | Web push | done — needs an installed PWA on iOS |
 
 ## Setup
@@ -73,6 +76,17 @@ npm run db:check    # diagnose the database connection
 npm run db:push     # apply schema
 npm run db:seed     # load courses, bells, settings, starter goals
 ```
+
+## Phone and laptop do different jobs
+
+The phone captures and shows the day: photograph an assignment and it becomes
+scheduled work, see what is next, tick things off, check in at night. The
+conversations — being tutored, working through a training question — live in
+the hub at `/hub`, which is desktop-only in the navigation.
+
+`/hub` still resolves on a phone if you follow a link. Hiding it is about not
+promoting the worse path, not locking a door: being tutored through a soft
+keyboard is a worse version of something that is fine on a laptop.
 
 ## Scheduling behaviour
 

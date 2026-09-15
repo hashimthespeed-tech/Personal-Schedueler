@@ -23,7 +23,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en">
       <body>
-        <main className="mx-auto w-full max-w-lg px-4 pb-28">{children}</main>
+        <main className="mx-auto w-full max-w-lg px-4 pb-28 lg:max-w-4xl">{children}</main>
         <NavBar />
       </body>
     </html>
