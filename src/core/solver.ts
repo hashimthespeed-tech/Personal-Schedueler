@@ -14,6 +14,7 @@
 import type {
   Block,
   Domain,
+  Recurrence,
   IsoDate,
   MinuteOfDay,
   Slot,
@@ -24,6 +25,8 @@ import type {
   UnplacedReason,
 } from "./types";
 import { to12h } from "./types";
+import { resolveDayPart } from "./dayparts";
+import { DateTime } from "luxon";
 import { energySatisfies } from "./energy";
 import { datesBetween } from "./slots";
 
@@ -91,12 +94,22 @@ function intersect(a: TimeRange, b: TimeRange): TimeRange | null {
   return end > start ? { start, end } : null;
 }
 
-/** The time-of-day window a task is allowed to occupy. */
-function taskWindow(task: Task): TimeRange {
-  return {
-    start: task.earliestTime ?? 0,
-    end: task.latestTime ?? 1440,
-  };
+/**
+ * The window a task may occupy on a given day.
+ *
+ * An explicit earliest/latest wins; otherwise a day part is resolved against
+ * that date, so "bedtime" tracks the ramping bedtime and "after-school"
+ * shifts on a practice day.
+ */
+function taskWindow(task: Task, slot: Slot): TimeRange {
+  if (task.earliestTime !== undefined || task.latestTime !== undefined) {
+    return { start: task.earliestTime ?? 0, end: task.latestTime ?? 1440 };
+  }
+  if (task.dayPart && task.dayPart !== "anytime") {
+    const resolved = resolveDayPart(task.dayPart, slot.date, slot.weekday);
+    if (resolved) return resolved;
+  }
+  return { start: 0, end: 1440 };
 }
 
 function canDoOffSite(task: Task): boolean {
@@ -123,7 +136,10 @@ function slotEligibility(
   if (!relaxEnergy && !energySatisfies(slot.energy, task.energy)) {
     return { ok: false, reason: "no_slot_in_time_window" };
   }
-  if (!intersect({ start: slot.start, end: slot.end }, taskWindow(task))) {
+  if (task.pinnedDate && slot.date !== task.pinnedDate) {
+    return { ok: false, reason: "no_slot_on_allowed_weekday" };
+  }
+  if (!intersect({ start: slot.start, end: slot.end }, taskWindow(task, slot))) {
     return { ok: false, reason: "no_slot_in_time_window" };
   }
   return { ok: true };
@@ -131,7 +147,7 @@ function slotEligibility(
 
 /** Usable sub-ranges of a slot for this task, clipped to its time window. */
 function usableRanges(task: Task, ms: MutableSlot): TimeRange[] {
-  const window = taskWindow(task);
+  const window = taskWindow(task, ms.slot);
   const out: TimeRange[] = [];
   for (const r of ms.free) {
     const hit = intersect(r, window);
@@ -217,11 +233,82 @@ function orderTasks(tasks: Task[], slots: MutableSlot[]): Task[] {
   });
 }
 
+/**
+ * A training session is one per day, whether or not the agent said so.
+ *
+ * Left to the agent, four separate lifts landed on the same Monday — 6:30am,
+ * then 4:25, 5:15, 6:05 and 7:40pm. Every one satisfied its own constraints;
+ * nothing said they could not stack. Rather than rely on a prompt remembering
+ * to set a spacing group every time, any substantial indivisible physique
+ * session gets one by default.
+ */
+const SESSION_MIN_DURATION = 30;
+const DEFAULT_SESSION_SPACING_HOURS = 20;
+
+function normalizeTask(task: Task): Task {
+  const isSession =
+    task.domain === "physique" &&
+    task.durationMin >= SESSION_MIN_DURATION &&
+    (task.minChunkMin === null || task.minChunkMin === undefined);
+
+  if (!isSession || task.spacing) return task;
+
+  return {
+    ...task,
+    spacing: { minHoursBetween: DEFAULT_SESSION_SPACING_HOURS, groupKey: "physique-session" },
+  };
+}
+
+const RECURRENCE_WEEKDAYS: Record<Recurrence, number[] | null> = {
+  once: null,
+  daily: [1, 2, 3, 4, 5, 6, 7],
+  weekdays: [1, 2, 3, 4, 5],
+  weekends: [6, 7],
+  weekly: null,
+};
+
+/**
+ * Turn a recurring task into one pinned instance per eligible day.
+ *
+ * Without this a daily habit is a single task: a morning weigh-in got placed
+ * once, on a Tuesday, and never again. Expanding here keeps the solver itself
+ * unaware of recurrence — every instance is an ordinary pinned task.
+ */
+export function expandRecurring(tasks: Task[], dates: IsoDate[]): Task[] {
+  const out: Task[] = [];
+
+  for (const task of tasks) {
+    const rule = task.recurrence ?? "once";
+    const weekdays = RECURRENCE_WEEKDAYS[rule];
+
+    if (rule === "once" || weekdays === null) {
+      out.push(task);
+      continue;
+    }
+
+    for (const date of dates) {
+      const weekday = DateTime.fromISO(date).weekday;
+      if (!weekdays.includes(weekday)) continue;
+      if (task.allowedWeekdays && !task.allowedWeekdays.includes(weekday)) continue;
+      out.push({
+        ...task,
+        id: `${task.id}@${date}`,
+        pinnedDate: date,
+        recurrence: "once",
+      });
+    }
+  }
+
+  return out;
+}
+
 export function solve(input: SolverInput): SolverResult {
   const maxUtilization = input.maxUtilization ?? DEFAULT_MAX_UTILIZATION;
   const restrictions = new Set(input.restrictions ?? []);
   const dates = datesBetween(input.startDate, input.horizonDays);
   const dayIndexOf = new Map(dates.map((d, i) => [d, i]));
+
+  const expanded = expandRecurring(input.tasks.map(normalizeTask), dates);
 
   const mutable: MutableSlot[] = input.slots
     .filter((s) => dayIndexOf.has(s.date))
@@ -253,7 +340,7 @@ export function solve(input: SolverInput): SolverResult {
 
   // restricted movements never reach the solver proper
   const admissible: Task[] = [];
-  for (const task of input.tasks) {
+  for (const task of expanded) {
     const bad = (task.movementTags ?? []).filter((m) => restrictions.has(m));
     if (bad.length > 0) {
       unplaced.push(

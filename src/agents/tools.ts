@@ -20,6 +20,8 @@ export const emitTaskInput = z.object({
   latestTime: z.string().regex(/^\d{2}:\d{2}$/).nullable().optional(),
   energy: z.enum(["high", "med", "low"]),
   priority: z.number().int().min(1).max(5),
+  dayPart: z.enum(["morning", "midday", "after-school", "evening", "bedtime", "anytime"]),
+  recurrence: z.enum(["once", "daily", "weekdays", "weekends", "weekly"]),
   allowedWeekdays: z.array(z.number().int().min(1).max(7)).nullable().optional(),
   spacingHours: z.number().int().min(0).max(336).nullable().optional(),
   spacingGroup: z.string().nullable().optional(),
@@ -52,13 +54,15 @@ export const EMIT_TASK: Anthropic.Tool = {
     "Add a unit of work to the shared pool with the constraints that govern it. " +
     "You are describing WHAT needs doing and what rules it must obey. You are NOT " +
     "choosing when it happens — the scheduler places it. Do not pick a date or a " +
-    "clock time; express the real constraint instead (a deadline, an allowed " +
-    "time-of-day window, which weekdays, how far apart repeats must be).",
+    "clock time; express the real constraint instead: which part of the day it belongs " +
+    "in, how often it repeats, a deadline, which weekdays, how far apart repeats must be. " +
+    "Before adding anything, check the task pool you were shown — if it is already there, " +
+    "do not emit it again.",
   strict: true,
   input_schema: {
     type: "object",
     additionalProperties: false,
-    required: ["title", "domain", "durationMin", "energy", "priority"],
+    required: ["title", "domain", "durationMin", "energy", "priority", "dayPart", "recurrence"],
     properties: {
       title: { type: "string", description: "Short and concrete, e.g. 'APUSH ch. 12 reading'." },
       domain: { type: "string", enum: [...DOMAINS] },
@@ -81,6 +85,24 @@ export const EMIT_TASK: Anthropic.Tool = {
           "How much focus it truly needs. Reserve 'high' for work that is wasted when tired — the high-energy morning block is scarce.",
       },
       priority: { type: "integer", description: "1 is highest. Be honest; everything cannot be a 1." },
+      dayPart: {
+        type: "string",
+        enum: ["morning", "midday", "after-school", "evening", "bedtime", "anytime"],
+        description:
+          "Which part of the day this belongs in. Required, and getting it wrong is worse than " +
+          "it sounds: a meal marked 'anytime' will be scheduled at 7am, and a wind-down routine " +
+          "at 6:50am. 'morning' is before school. 'after-school' shifts automatically to 5:30pm " +
+          "on practice days. 'bedtime' is the 90 minutes before lights out. Use 'anytime' only " +
+          "when the work genuinely could happen at any hour.",
+      },
+      recurrence: {
+        type: "string",
+        enum: ["once", "daily", "weekdays", "weekends", "weekly"],
+        description:
+          "How often this repeats. A daily habit — weighing in, breakfast, a wind-down — is " +
+          "'daily', NOT 'once'. Emitting a habit as 'once' places it on a single arbitrary day " +
+          "and never again. Use 'once' only for a specific piece of work with an end.",
+      },
       allowedWeekdays: {
         type: ["array", "null"],
         items: { type: "integer" },

@@ -7,7 +7,7 @@
  */
 
 import type Anthropic from "@anthropic-ai/sdk";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { db } from "../db/index";
 import { agentThreads, metrics, tasks } from "../db/schema";
 import { anthropic, AGENT_MODEL, describeApiError } from "./client";
@@ -40,8 +40,46 @@ function textOf(content: Anthropic.ContentBlock[]): string {
     .trim();
 }
 
+/** Loose match, so "Full-body lift A - squat, bench, row" hits its own duplicate. */
+function normalizeTitle(title: string): string {
+  return title
+    .toLowerCase()
+    .replace(/[^a-z0-9 ]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 async function persistTask(input: unknown, agent: SpecialistName): Promise<string> {
   const parsed = emitTaskInput.parse(input);
+
+  // Running an agent twice should not double its plan. Before the pool was
+  // visible in context, six Coach runs produced fifteen tasks — the same three
+  // lifts and the same habits, over and over.
+  const existing = await db
+    .select()
+    .from(tasks)
+    .where(and(eq(tasks.sourceAgent, agent), eq(tasks.status, "open")));
+
+  const match = existing.find((t) => normalizeTitle(t.title) === normalizeTitle(parsed.title));
+  if (match) {
+    await db
+      .update(tasks)
+      .set({
+        durationMin: parsed.durationMin,
+        minChunkMin: parsed.minChunkMin ?? null,
+        deadline: parsed.deadline ?? null,
+        energy: parsed.energy,
+        priority: parsed.priority,
+        dayPart: parsed.dayPart,
+        recurrence: parsed.recurrence,
+        allowedWeekdays: parsed.allowedWeekdays ?? null,
+        movementTags: parsed.movementTags ?? null,
+        notes: parsed.notes ?? null,
+      })
+      .where(eq(tasks.id, match.id));
+    return `Updated the existing "${match.title}" rather than adding a second copy.`;
+  }
+
   const id = `${agent}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
   await db.insert(tasks).values({
@@ -56,6 +94,8 @@ async function persistTask(input: unknown, agent: SpecialistName): Promise<strin
     latestTime: parsed.latestTime ? hm(parsed.latestTime) : null,
     energy: parsed.energy,
     priority: parsed.priority,
+    dayPart: parsed.dayPart,
+    recurrence: parsed.recurrence,
     spacingHours: parsed.spacingHours ?? null,
     spacingGroup: parsed.spacingGroup ?? null,
     allowedWeekdays: parsed.allowedWeekdays ?? null,

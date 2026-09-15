@@ -125,6 +125,25 @@ async function commonContext(date: IsoDate): Promise<string> {
     }
   }
 
+  const openTasks = await db.select().from(tasks).where(eq(tasks.status, "open"));
+  lines.push(`\n## Task pool — what is ALREADY scheduled to happen (${openTasks.length})`);
+  if (openTasks.length === 0) {
+    lines.push(`Empty.`);
+  } else {
+    lines.push(`Do NOT re-create any of these. Adjust one if it is wrong, or close it if it should not happen.`);
+    for (const t of openTasks) {
+      const bits = [
+        `${t.durationMin}min`,
+        t.dayPart ?? "anytime",
+        t.recurrence === "once" ? "one-off" : t.recurrence,
+        `pri ${t.priority}`,
+        t.deadline ? `due ${t.deadline}` : null,
+        t.allowedWeekdays ? `days ${t.allowedWeekdays.join("/")}` : null,
+      ].filter(Boolean);
+      lines.push(`- [${t.domain}] ${t.title} (${bits.join(", ")}) — id ${t.id}, from ${t.sourceAgent}`);
+    }
+  }
+
   if (openUnplaced.length > 0) {
     lines.push(`\n## Did not fit this week`);
     lines.push(`These were dropped by the scheduler. If any belong to you, they are your problem to resolve.`);

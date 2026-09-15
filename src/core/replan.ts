@@ -29,6 +29,8 @@ function toSolverTask(row: typeof tasks.$inferSelect): Task {
     priority: Math.min(5, Math.max(1, row.priority)) as Task["priority"],
     allowedWeekdays: row.allowedWeekdays ?? undefined,
     movementTags: row.movementTags ?? undefined,
+    dayPart: (row.dayPart as Task["dayPart"]) ?? undefined,
+    recurrence: (row.recurrence as Task["recurrence"]) ?? "once",
     sourceAgent: row.sourceAgent as Task["sourceAgent"],
     ...(row.spacingGroup && row.spacingHours
       ? { spacing: { minHoursBetween: row.spacingHours, groupKey: row.spacingGroup } }

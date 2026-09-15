@@ -4,6 +4,26 @@ export type Domain = "school" | "deen" | "ai" | "money" | "physique";
 export type Energy = "high" | "med" | "low";
 export type AgentName = "coach" | "tutor" | "ustadh" | "builder" | "system";
 
+/**
+ * Where in the day a task belongs.
+ *
+ * Exists because a clock window is easy to omit and the omission is silent:
+ * a "post-school meal" with no window got scheduled at 7:20 AM, and a
+ * "phone down, lights out" at 6:50 AM. Naming the part of the day is far
+ * harder to get wrong than picking times, and the concrete window is derived
+ * per-day so it tracks the bedtime ramp and the school schedule.
+ */
+export type DayPart =
+  | "morning"
+  | "midday"
+  | "after-school"
+  | "evening"
+  | "bedtime"
+  | "anytime";
+
+/** How often a task recurs across the horizon. */
+export type Recurrence = "once" | "daily" | "weekdays" | "weekends" | "weekly";
+
 /** Minutes since local midnight. Keeps slot math integer-only and DST-safe. */
 export type MinuteOfDay = number;
 
@@ -41,6 +61,12 @@ export interface Task {
   spacing?: { minHoursBetween: number; groupKey: string };
   /** restrict to specific weekdays (1 = Mon .. 7 = Sun) */
   allowedWeekdays?: number[];
+  /** part of the day this belongs in; resolved to a window per date */
+  dayPart?: DayPart;
+  /** repeats across the horizon rather than being placed once */
+  recurrence?: Recurrence;
+  /** set when a recurring task has been expanded to one specific date */
+  pinnedDate?: IsoDate;
   sourceAgent: AgentName;
   /** movement tags, checked against athlete restrictions before placement */
   movementTags?: string[];

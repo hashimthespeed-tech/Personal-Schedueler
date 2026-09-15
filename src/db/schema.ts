@@ -88,6 +88,8 @@ export const tasks = pgTable(
     latestTime: integer("latest_time"),
     energy: text("energy").notNull().default("med"),
     priority: integer("priority").notNull().default(3),
+    dayPart: text("day_part"),
+    recurrence: text("recurrence").notNull().default("once"),
     spacingHours: integer("spacing_hours"),
     spacingGroup: text("spacing_group"),
     allowedWeekdays: jsonb("allowed_weekdays").$type<number[]>(),

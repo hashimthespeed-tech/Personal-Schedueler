@@ -107,6 +107,8 @@ export async function GET() {
     const bits = [
       `${t.durationMin}min`,
       t.minChunkMin ? `splits ${t.minChunkMin}+` : "indivisible",
+      t.dayPart ?? "anytime",
+      t.recurrence === "once" ? "one-off" : t.recurrence,
       `energy ${t.energy}`,
       `pri ${t.priority}`,
       t.deadline ? `due ${t.deadline}` : null,
