@@ -16,6 +16,20 @@ import { DEFAULT_MAX_UTILIZATION } from "../core/solver";
 async function main() {
   console.log("Seeding…");
 
+  // A missing table almost always means db:push never ran — or ran against an
+  // empty DATABASE_URL and exited quietly. Say that, rather than surfacing a
+  // failed DELETE and letting it look like a data problem.
+  try {
+    await db.select().from(courses).limit(1);
+  } catch {
+    throw new Error(
+      "The tables do not exist yet.\n\n" +
+        "Run this first:\n  npm run db:push\n\n" +
+        "It should finish with \"Changes applied\". If it stops at \"Pulling schema\n" +
+        "from database…\" and returns to the prompt, DATABASE_URL is not set — check .env.",
+    );
+  }
+
   await db.delete(courses);
   await db.insert(courses).values(
     COURSES.map((c) => ({
