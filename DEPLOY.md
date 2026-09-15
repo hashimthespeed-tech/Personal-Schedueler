@@ -16,52 +16,86 @@ Neon's free tier is enough.
 
 ---
 
-## 2. Create the tables and load your schedule (3 min)
+## 2. Create the tables and load your schedule (5 min)
 
-This runs from your own machine, once. You need Node installed.
+This runs from your own machine, once. You need [Node](https://nodejs.org)
+and [Git](https://git-scm.com/downloads) installed.
 
-```bash
+### Windows (PowerShell)
+
+Run these **one line at a time**. Do not run them from `C:\WINDOWS\system32` —
+Windows blocks writing there and the clone will fail with "Permission denied".
+Older PowerShell also does not accept `&&`, so keep the lines separate.
+
+```powershell
+cd ~\Documents
 git clone https://github.com/hashimthespeed-tech/Personal-Schedueler.git
 cd Personal-Schedueler
 npm install
-
-cp .env.example .env
-# open .env and fill in DATABASE_URL and ANTHROPIC_API_KEY
-
+Copy-Item .env.example .env
 npx web-push generate-vapid-keys
-# paste the two keys into .env as VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY,
-# and the public one AGAIN as NEXT_PUBLIC_VAPID_PUBLIC_KEY
+notepad .env
+```
 
+If `npx` asks `Ok to proceed? (y)`, type `y` and press Enter.
+
+To generate the two random secrets, run this twice — the first result is
+`SESSION_PASSWORD`, the second is `CRON_SECRET`:
+
+```powershell
+-join ((1..48) | ForEach-Object { '{0:x}' -f (Get-Random -Max 16) })
+```
+
+### macOS / Linux
+
+```bash
+cd ~
+git clone https://github.com/hashimthespeed-tech/Personal-Schedueler.git
+cd Personal-Schedueler
+npm install
+cp .env.example .env
+npx web-push generate-vapid-keys
+openssl rand -hex 24    # run twice: SESSION_PASSWORD, then CRON_SECRET
+```
+
+### Fill in .env, then create the tables
+
+Nine values, listed in the table in step 3 below. Then:
+
+```
 npm run db:push    # creates the tables
 npm run db:seed    # loads your courses, bell schedules, settings, goals
 ```
 
-`db:seed` should print your 7 courses and 75 fixed commitments. If it does,
-the database is ready.
+`db:seed` should print 7 courses and 75 fixed commitments. If it does, the
+database is ready.
 
-> No terminal? Skip this for now — deploy first, then run `db:push` and
-> `db:seed` from anywhere that has Node, pointed at the same DATABASE_URL.
-
----
+> No terminal, or stuck? Deploy first — the site will error on a missing
+> table. Run `db:push` and `db:seed` later from anywhere with Node, pointed
+> at the same DATABASE_URL, then reload.
 
 ## 3. Deploy (5 min)
 
 1. Go to https://vercel.com and sign in with GitHub
 2. **Add New → Project**, pick `Personal-Schedueler`
 3. Vercel detects Next.js automatically — do not change the build settings
-4. Expand **Environment Variables** and add these before you deploy:
+4. Expand **Environment Variables** and add all nine before you deploy:
 
 | Name | Value |
 |---|---|
-| `DATABASE_URL` | your Neon string |
-| `ANTHROPIC_API_KEY` | your `sk-ant-...` key |
-| `SESSION_PASSWORD` | any random string, 32+ characters |
-| `APP_PASSPHRASE` | whatever you want your login to be |
-| `VAPID_PUBLIC_KEY` | from step 2 |
-| `VAPID_PRIVATE_KEY` | from step 2 |
-| `NEXT_PUBLIC_VAPID_PUBLIC_KEY` | same as VAPID_PUBLIC_KEY |
-| `VAPID_SUBJECT` | `mailto:your@email.com` |
-| `CRON_SECRET` | any random string |
+| `DATABASE_URL` | your Neon string, starts `postgresql://` |
+| `ANTHROPIC_API_KEY` | your key, starts `sk-ant-` |
+| `SESSION_PASSWORD` | first random string from step 2 |
+| `APP_PASSPHRASE` | you pick this — it is your login to the app |
+| `VAPID_PUBLIC_KEY` | Public Key printed by `web-push` |
+| `VAPID_PRIVATE_KEY` | Private Key printed by `web-push` |
+| `NEXT_PUBLIC_VAPID_PUBLIC_KEY` | the Public Key again — same value |
+| `VAPID_SUBJECT` | `mailto:` then your email |
+| `CRON_SECRET` | second random string from step 2 |
+
+The same nine go in your local `.env`. `NEXT_PUBLIC_VAPID_PUBLIC_KEY` really is
+a duplicate of `VAPID_PUBLIC_KEY`: the `NEXT_PUBLIC_` copy is the one the
+browser is allowed to read, which is why the private key has no twin.
 
 5. **Deploy**
 
