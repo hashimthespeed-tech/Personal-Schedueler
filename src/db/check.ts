@@ -49,6 +49,25 @@ async function main() {
     );
   }
 
+  // The .env.example placeholder resolves to a hostname of literally "host",
+  // which fails as a DNS error and reads like a typo rather than a line that
+  // was never filled in.
+  const PLACEHOLDERS = [
+    "postgresql://user:password@host/dbname",
+    "user:password@host",
+    "@host/dbname",
+  ];
+  if (PLACEHOLDERS.some((p) => raw.includes(p))) {
+    fail(
+      "DATABASE_URL is still the example value from .env.example.\n\n" +
+        `  ${mask(raw)}\n\n` +
+        "Open .env and replace that whole line with your real connection string.\n" +
+        "In Neon: your project -> Connection string -> copy. It looks like:\n\n" +
+        "  postgresql://neondb_owner:PASSWORD@ep-something-12345678.us-west-2.aws.neon.tech/neondb?sslmode=require\n\n" +
+        "Copy only the URL — not a surrounding psql '...' wrapper.",
+    );
+  }
+
   const trimmed = raw.trim().replace(/^['"]|['"]$/g, "");
   if (trimmed !== raw) {
     console.log("  note: stripped surrounding quotes or whitespace");
