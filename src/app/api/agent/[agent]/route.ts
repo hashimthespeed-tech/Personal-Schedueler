@@ -4,10 +4,17 @@ import { getSession } from "@/lib/auth";
 import { runSpecialist } from "@/agents/run";
 import { isSpecialist } from "@/agents/specialists";
 
-// Vercel caps this at 60s on Hobby and 300s on Pro. An Opus 5 turn with
-// adaptive thinking and a tool loop usually lands well inside 60s; raise it
-// if you move to Pro and a long tool loop ever gets cut off.
-export const maxDuration = 60;
+/**
+ * 300s, which is what Hobby allows with Fluid compute (on by default for new
+ * projects). This was 60 and that was simply wrong: a single Opus 5 turn with
+ * adaptive thinking can take 30-60s on its own, and a tool loop makes several
+ * of them, so the function was being killed mid-conversation and returning a
+ * 504.
+ *
+ * If a deploy rejects this value, Fluid compute is off for the project —
+ * Vercel dashboard, Settings, Functions.
+ */
+export const maxDuration = 300;
 
 const body = z.object({ message: z.string().min(1).max(4000) });
 

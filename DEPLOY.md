@@ -159,9 +159,18 @@ arithmetic and runs free.
 
 ## Function time limits
 
-Agent turns run Opus 5 with adaptive thinking, which usually takes 20-60
-seconds. Both `/api/agent/[agent]` and `/api/replan` declare
-`maxDuration = 60`, the Hobby ceiling. On Pro you can raise it to 300.
+Agent turns run Opus 5 with adaptive thinking. A single turn can take 30-60
+seconds, and a tool loop makes several of them, so a reply can run a few
+minutes. Both `/api/agent/[agent]` and `/api/replan` declare
+`maxDuration = 300`.
+
+**300 seconds on Hobby requires Fluid compute**, which is on by default for
+new projects. If a deploy rejects the value, or agent replies come back as a
+504, check Vercel → Settings → Functions and make sure Fluid compute is
+enabled.
+
+A 504 does not necessarily mean nothing happened — tasks the agent created
+before the timeout are already saved, so check the Week tab before retrying.
 
 This is also why the app is on Vercel rather than Netlify: Netlify caps
 synchronous functions at 10s on free and 26s on Pro, which is under what an

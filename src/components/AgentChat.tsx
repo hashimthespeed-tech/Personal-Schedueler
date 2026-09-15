@@ -32,6 +32,19 @@ export function AgentChat({ agent, initial }: { agent: string; initial: Turn[] }
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ message }),
       });
+
+      // A gateway timeout or platform error returns an HTML page, not JSON.
+      // Parsing it blindly turns a clear "this took too long" into an opaque
+      // "Unexpected token 'A' is not valid JSON".
+      if (!res.headers.get("content-type")?.includes("application/json")) {
+        setError(
+          res.status === 504
+            ? "That took too long and timed out. Any tasks it created before timing out were still saved — check the Week tab. Try a shorter request."
+            : `The server returned an error (${res.status}). Try again in a moment.`,
+        );
+        return;
+      }
+
       const data = (await res.json()) as {
         ok: boolean;
         text?: string;

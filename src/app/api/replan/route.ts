@@ -6,8 +6,8 @@ import { sendPush } from "@/lib/push";
 import { today } from "@/agents/context";
 
 // The nightly review is the slowest path in the app: two solver iterations
-// around an Opus 5 turn. 60s is the Hobby ceiling.
-export const maxDuration = 60;
+// around an Opus 5 turn. 300s is what Hobby allows with Fluid compute.
+export const maxDuration = 300;
 
 /**
  * Two callers: the Replan button (solver only, instant, free) and the nightly

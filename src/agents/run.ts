@@ -17,7 +17,12 @@ import { buildContext, today } from "./context";
 import { replan } from "../core/replan";
 import { hm, type IsoDate } from "../core/types";
 
-const MAX_TURNS = 8;
+/**
+ * Each turn is a full Opus 5 request with adaptive thinking, so this is the
+ * main lever on how long a reply can take. Four covers emit-then-summarise
+ * with room for a correction; eight could outlast any request timeout.
+ */
+const MAX_TURNS = 4;
 const MAX_TOKENS = 16000;
 
 export interface AgentReply {
