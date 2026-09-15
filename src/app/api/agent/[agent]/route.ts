@@ -4,7 +4,10 @@ import { getSession } from "@/lib/auth";
 import { runSpecialist } from "@/agents/run";
 import { isSpecialist } from "@/agents/specialists";
 
-export const maxDuration = 120;
+// Vercel caps this at 60s on Hobby and 300s on Pro. An Opus 5 turn with
+// adaptive thinking and a tool loop usually lands well inside 60s; raise it
+// if you move to Pro and a long tool loop ever gets cut off.
+export const maxDuration = 60;
 
 const body = z.object({ message: z.string().min(1).max(4000) });
 
