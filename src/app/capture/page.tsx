@@ -10,8 +10,8 @@ export default async function CapturePage() {
     <div className="pt-6">
       <h1 className="text-2xl font-semibold tracking-tight">Capture</h1>
       <p className="dim mb-5 text-sm">
-        Photograph an assignment sheet and it becomes scheduled work. For actually being
-        tutored, use the hub on a laptop.
+        Photograph something and the right specialist files it. For actually being tutored,
+        use the hub on a laptop.
       </p>
       <CaptureForm />
     </div>

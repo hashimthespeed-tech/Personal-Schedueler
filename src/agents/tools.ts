@@ -185,4 +185,85 @@ export const CLOSE_TASK: Anthropic.Tool = {
   },
 };
 
+export const logMealInput = z.object({
+  mealSlot: z.string(),
+  description: z.string(),
+  calories: z.number().int().min(0).max(5000),
+  proteinG: z.number().int().min(0).max(300),
+  verdict: z.string(),
+});
+
+export const logWorkoutInput = z.object({
+  session: z.string(),
+  exercises: z.array(
+    z.object({
+      name: z.string(),
+      sets: z.array(z.object({ reps: z.number().int().min(0), weight: z.number().nullable() })),
+    }),
+  ),
+});
+
+export const LOG_MEAL: Anthropic.Tool = {
+  name: "log_meal",
+  description:
+    "Record a meal from a photo of it. Estimate calories and protein — an estimate that is " +
+    "roughly right every day beats an exact number nobody logs. Say in one line whether it " +
+    "moves him toward his targets or not.",
+  strict: true,
+  input_schema: {
+    type: "object",
+    additionalProperties: false,
+    required: ["mealSlot", "description", "calories", "proteinG", "verdict"],
+    properties: {
+      mealSlot: { type: "string", description: "breakfast, lunch, after-school, dinner, before-bed or snack" },
+      description: { type: "string", description: "What is actually on the plate." },
+      calories: { type: "integer" },
+      proteinG: { type: "integer" },
+      verdict: {
+        type: "string",
+        description:
+          "One line, honest. If it is short on protein say so and say by how much — he is " +
+          "underfed and the whole physique goal turns on this.",
+      },
+    },
+  },
+};
+
+export const LOG_WORKOUT: Anthropic.Tool = {
+  name: "log_workout",
+  description: "Record sets from a photo of a written training log.",
+  strict: true,
+  input_schema: {
+    type: "object",
+    additionalProperties: false,
+    required: ["session", "exercises"],
+    properties: {
+      session: { type: "string", description: "push, legs, pull or posterior-shoulders" },
+      exercises: {
+        type: "array",
+        items: {
+          type: "object",
+          additionalProperties: false,
+          required: ["name", "sets"],
+          properties: {
+            name: { type: "string" },
+            sets: {
+              type: "array",
+              items: {
+                type: "object",
+                additionalProperties: false,
+                required: ["reps", "weight"],
+                properties: {
+                  reps: { type: "integer" },
+                  weight: { type: ["number", "null"], description: "Total pounds, or null for bodyweight." },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+  },
+};
+
 export const SPECIALIST_TOOLS: Anthropic.Tool[] = [EMIT_TASK, LOG_METRIC, CLOSE_TASK];
