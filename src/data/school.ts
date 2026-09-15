@@ -55,27 +55,19 @@ export const BELL_REG: BellPeriod[] = [
   { period: 7, start: hm("14:46"), end: hm("15:36") },
 ];
 
-/**
- * Friday late start. Only period 1 (09:00-09:42) is confirmed from the
- * user's schedule; the rest is derived from a 42-minute period with 6-minute
- * passing, holding lunch at the same relative position.
- *
- * TODO(user): confirm against the FRI rows of the published schedule.
- */
+/** Friday late start. Verified against the user's published schedule. */
 export const BELL_FRI: BellPeriod[] = [
   { period: 1, start: hm("09:00"), end: hm("09:42") },
   { period: 2, start: hm("09:48"), end: hm("10:30") },
-  { period: 3, start: hm("10:36"), end: hm("11:18") },
-  { period: 4, start: hm("11:24"), end: hm("12:06") },
-  { period: 5, start: hm("12:42"), end: hm("13:24") },
-  { period: 6, start: hm("13:30"), end: hm("14:12") },
-  { period: 7, start: hm("14:18"), end: hm("15:00") },
+  { period: 3, start: hm("11:04"), end: hm("11:46") },
+  { period: 4, start: hm("11:52"), end: hm("12:36") },
+  { period: 5, start: hm("13:12"), end: hm("13:54") },
+  { period: 6, start: hm("14:00"), end: hm("14:42") },
+  { period: 7, start: hm("14:48"), end: hm("15:30") },
 ];
 
-export const BELL_FRI_CONFIRMED_PERIODS = [1];
-
-export const LUNCH_REG = { start: hm("12:18"), end: hm("12:54") };
-export const LUNCH_FRI = { start: hm("12:06"), end: hm("12:42") };
+/** Lunch is the gap between periods 4 and 5 on both bell schedules. */
+const LUNCH_AFTER_PERIOD = 4;
 
 /** Door-to-door each way. 08:05 departure for an 08:30 bell. */
 export const COMMUTE_MIN = 25;
@@ -98,9 +90,7 @@ function courseFor(period: number): Course {
 export function fixedCommitmentsFor(weekday: number): FixedCommitment[] {
   if (weekday > 5) return [];
 
-  const isFriday = weekday === 5;
-  const bell = isFriday ? BELL_FRI : BELL_REG;
-  const lunch = isFriday ? LUNCH_FRI : LUNCH_REG;
+  const bell = weekday === 5 ? BELL_FRI : BELL_REG;
   const first = bell[0];
   const last = bell[bell.length - 1];
   if (!first || !last) throw new Error("Empty bell schedule");
@@ -119,7 +109,6 @@ export function fixedCommitmentsFor(weekday: number): FixedCommitment[] {
 
   for (const p of bell) {
     const course = courseFor(p.period);
-    const isFree = course.rigor === "free";
     out.push({
       id: `${weekday}-p${p.period}`,
       title: `P${p.period} ${course.name}`,
@@ -129,22 +118,34 @@ export function fixedCommitmentsFor(weekday: number): FixedCommitment[] {
       kind: "school",
       offSite: true,
       // the free period is the one fixed commitment that is usable time
-      workable: isFree,
+      workable: course.rigor === "free",
     });
   }
 
-  out.push({
-    id: `${weekday}-lunch`,
-    title: "Lunch",
-    weekday,
-    start: lunch.start,
-    end: lunch.end,
-    kind: "meal",
-    offSite: true,
-  });
+  // Everything between two periods is accounted for. Gaps are derived from the
+  // bells rather than hardcoded, so the two bell schedules cannot drift out of
+  // sync with a second copy of lunch. None of it is workable: passing periods
+  // are short, and the Friday break between periods 2 and 3 has not been
+  // confirmed as usable time.
+  for (let i = 0; i < bell.length - 1; i++) {
+    const current = bell[i];
+    const next = bell[i + 1];
+    if (!current || !next) continue;
+    if (next.start <= current.end) continue;
 
-  const practice = PRACTICE_DAYS.includes(weekday);
-  if (practice) {
+    const isLunch = current.period === LUNCH_AFTER_PERIOD;
+    out.push({
+      id: `${weekday}-gap-${current.period}`,
+      title: isLunch ? "Lunch" : "Break",
+      weekday,
+      start: current.end,
+      end: next.start,
+      kind: isLunch ? "meal" : "other",
+      offSite: true,
+    });
+  }
+
+  if (PRACTICE_DAYS.includes(weekday)) {
     out.push({
       id: `${weekday}-practice`,
       title: "Practice",
@@ -166,7 +167,18 @@ export function fixedCommitmentsFor(weekday: number): FixedCommitment[] {
     });
   }
 
-  return out;
+  return out.sort((a, b) => a.start - b.start);
+}
+
+/** The lunch window for a weekday, derived from the bell schedule. */
+export function lunchFor(weekday: number): { start: MinuteOfDay; end: MinuteOfDay } | null {
+  if (weekday > 5) return null;
+  const bell = weekday === 5 ? BELL_FRI : BELL_REG;
+  const idx = bell.findIndex((p) => p.period === LUNCH_AFTER_PERIOD);
+  const current = bell[idx];
+  const next = bell[idx + 1];
+  if (!current || !next) return null;
+  return { start: current.end, end: next.start };
 }
 
 /** The time the user is actually home and free, per weekday. */

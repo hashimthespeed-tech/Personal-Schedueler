@@ -3,9 +3,21 @@
  * arithmetic it will do inconsistently.
  *
  * Rule, from the user's plan: when every set hits the top of the rep range,
- * add weight next session. Upper body nominally +10 lb, but there are no 5 lb
- * plates, so the smallest symmetrical jump is +20 lb and the rep range resets
- * to the bottom. Lower body +20 lb.
+ * add weight next session. Nominally +10 lb upper, +20 lb lower.
+ *
+ * The plan assumes a smooth weight ladder. The user's plates do not provide
+ * one. With a single 10, 15 and 25 per side the only buildable loads are
+ * 20, 40, 50, 70, 90, 100 and 120 — so some lifts have no next step small
+ * enough to actually make.
+ *
+ * The plan also missed that swapping plates gives finer increments than
+ * adding them: 40 lb (10s) to 50 lb (15s) is a +10 jump, not the +20 it
+ * assumed. That recovers normal progression on bench and curls.
+ *
+ * Where no acceptable step exists — overhead press at bar weight would have
+ * to double — the prescription holds the load and progresses reps and tempo
+ * instead, and says plainly that plates are the limiter. Prescribing a jump
+ * the athlete will fail is worse than saying the equipment is the problem.
  */
 
 import type { Exercise } from "./program.js";
@@ -17,8 +29,18 @@ export const BAR_WEIGHT = 20;
 /** Bar plus every plate loaded: 20 + 2*(10+15+25). */
 export const MAX_LOAD = BAR_WEIGHT + 2 * (10 + 15 + 25);
 
-export const UPPER_INCREMENT = 20;
+export const UPPER_INCREMENT = 10;
 export const LOWER_INCREMENT = 20;
+
+/**
+ * A jump is acceptable if it is no larger than the nominal increment for that
+ * lift, or 15% of the current load, whichever is more forgiving. Beyond that
+ * the athlete will simply miss the reps.
+ */
+export function isAcceptableJump(current: number, next: number, lower: boolean): boolean {
+  const nominal = lower ? LOWER_INCREMENT : UPPER_INCREMENT;
+  return next - current <= Math.max(nominal, current * 0.15);
+}
 
 export interface SetLog {
   reps: number;
@@ -38,6 +60,12 @@ export interface Prescription {
   /** why the weight changed, shown verbatim in the UI */
   note: string;
   atCeiling: boolean;
+  /**
+   * True when the athlete earned more load but no buildable plate combination
+   * provides a jump small enough to make. The equipment is the limiter, not
+   * the athlete.
+   */
+  plateGapped?: boolean;
 }
 
 /** Can this total load actually be built from the bar and plates on hand? */
@@ -66,6 +94,12 @@ export function loadableWeights(): number[] {
 export function nextLoadableWeight(target: number): number | null {
   const options = loadableWeights();
   for (const w of options) if (w >= target) return w;
+  return null;
+}
+
+/** The smallest buildable load strictly heavier than `current`. */
+export function stepUpFrom(current: number): number | null {
+  for (const w of loadableWeights()) if (w > current) return w;
   return null;
 }
 
@@ -124,11 +158,9 @@ export function nextPrescription(
     };
   }
 
-  const increment = exercise.lower ? LOWER_INCREMENT : UPPER_INCREMENT;
-  const target = lastWeight + increment;
-  const loadable = nextLoadableWeight(target);
+  const next = stepUpFrom(lastWeight);
 
-  if (loadable === null || loadable > MAX_LOAD) {
+  if (next === null || next > MAX_LOAD) {
     return {
       exerciseName: exercise.name,
       weight: lastWeight,
@@ -138,12 +170,24 @@ export function nextPrescription(
     };
   }
 
+  if (!isAcceptableJump(lastWeight, next, exercise.lower)) {
+    const jump = next - lastWeight;
+    return {
+      exerciseName: exercise.name,
+      weight: lastWeight,
+      targetReps: exercise.repRange,
+      note: `earned more load, but the next buildable weight is ${next} lb — a ${jump} lb jump you would miss. Hold ${lastWeight} lb, slow the lowering and add reps. A pair of 5 lb plates fixes this lift.`,
+      atCeiling: false,
+      plateGapped: true,
+    };
+  }
+
   return {
     exerciseName: exercise.name,
-    weight: loadable,
+    weight: next,
     // reset to the bottom of the range after a jump
     targetReps: [exercise.repRange[0], exercise.repRange[1]],
-    note: `+${loadable - lastWeight} lb — back to ${exercise.repRange[0]} reps`,
+    note: `+${next - lastWeight} lb — back to ${exercise.repRange[0]} reps`,
     atCeiling: false,
   };
 }
@@ -161,9 +205,35 @@ export function sessionsUntilCeiling(
   sessionsPerJump: number,
 ): number | null {
   if (sessionsPerJump <= 0) return null;
-  const increment = exercise.lower ? LOWER_INCREMENT : UPPER_INCREMENT;
-  const headroom = MAX_LOAD - currentWeight;
-  if (headroom <= 0) return 0;
-  const jumpsLeft = Math.floor(headroom / increment);
-  return jumpsLeft * sessionsPerJump;
+  if (currentWeight >= MAX_LOAD) return 0;
+
+  // walk the actual buildable ladder — the steps are not evenly sized
+  let weight = currentWeight;
+  let jumps = 0;
+  for (;;) {
+    const next = stepUpFrom(weight);
+    if (next === null || next > MAX_LOAD) break;
+    if (!isAcceptableJump(weight, next, exercise.lower)) break;
+    weight = next;
+    jumps += 1;
+  }
+  return jumps * sessionsPerJump;
+}
+
+/**
+ * Lifts whose next step is unreachable with the plates on hand. Surfaces the
+ * equipment gap as a concrete shopping list rather than a mystery plateau.
+ */
+export function plateGappedLifts(
+  entries: { exercise: Exercise; currentWeight: number | null }[],
+): { name: string; currentWeight: number; nextBuildable: number }[] {
+  const out: { name: string; currentWeight: number; nextBuildable: number }[] = [];
+  for (const { exercise, currentWeight } of entries) {
+    if (currentWeight === null) continue;
+    const next = stepUpFrom(currentWeight);
+    if (next === null || next > MAX_LOAD) continue;
+    if (isAcceptableJump(currentWeight, next, exercise.lower)) continue;
+    out.push({ name: exercise.name, currentWeight, nextBuildable: next });
+  }
+  return out;
 }
