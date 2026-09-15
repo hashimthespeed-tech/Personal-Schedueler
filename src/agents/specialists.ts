@@ -7,7 +7,7 @@
  * layer already does correctly.
  */
 
-import type { AgentName } from "../core/types.js";
+import type { AgentName } from "../core/types";
 
 export type SpecialistName = Exclude<AgentName, "system">;
 

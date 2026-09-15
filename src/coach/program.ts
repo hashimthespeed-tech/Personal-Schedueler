@@ -12,8 +12,8 @@
  * That loses weight, which is the opposite of the goal.
  */
 
-import type { Task } from "../core/types.js";
-import { hm } from "../core/types.js";
+import type { Task } from "../core/types";
+import { hm } from "../core/types";
 
 /** Movements the ankle cannot currently tolerate. */
 export const ANKLE_RESTRICTIONS = [

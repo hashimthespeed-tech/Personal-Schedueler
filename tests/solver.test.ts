@@ -1,11 +1,11 @@
 import { describe, it, expect } from "vitest";
-import { solve } from "../src/core/solver.js";
-import { slotsForHorizon } from "../src/core/slots.js";
-import { programTasks, ANKLE_RESTRICTIONS } from "../src/coach/program.js";
-import { bedtimeFor } from "../src/core/sleep.js";
-import { prayerBlocks } from "../src/core/prayer.js";
-import type { Task } from "../src/core/types.js";
-import { hm, overlaps, toHm } from "../src/core/types.js";
+import { solve } from "../src/core/solver";
+import { slotsForHorizon } from "../src/core/slots";
+import { programTasks, ANKLE_RESTRICTIONS } from "../src/coach/program";
+import { bedtimeFor } from "../src/core/sleep";
+import { prayerBlocks } from "../src/core/prayer";
+import type { Task } from "../src/core/types";
+import { hm, overlaps, toHm } from "../src/core/types";
 
 const MON = "2026-09-14";
 

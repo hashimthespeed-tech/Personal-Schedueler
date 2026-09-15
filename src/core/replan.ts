@@ -4,13 +4,13 @@
  */
 
 import { eq, sql } from "drizzle-orm";
-import { db } from "../db/index.js";
-import { blocks, settings, tasks, unplaced } from "../db/schema.js";
-import { solve, DEFAULT_MAX_UTILIZATION } from "./solver.js";
-import { slotsForHorizon } from "./slots.js";
-import { DEFAULT_SLEEP, type SleepModel } from "./sleep.js";
-import { LA_MESA, type PrayerConfig } from "./prayer.js";
-import type { Energy, IsoDate, SolverResult, Task } from "./types.js";
+import { db } from "../db/index";
+import { blocks, settings, tasks, unplaced } from "../db/schema";
+import { solve, DEFAULT_MAX_UTILIZATION } from "./solver";
+import { slotsForHorizon } from "./slots";
+import { DEFAULT_SLEEP, type SleepModel } from "./sleep";
+import { LA_MESA, type PrayerConfig } from "./prayer";
+import type { Energy, IsoDate, SolverResult, Task } from "./types";
 
 export const HORIZON_DAYS = 7;
 

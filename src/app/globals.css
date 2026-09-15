@@ -1,0 +1,61 @@
+@import "tailwindcss";
+
+@theme {
+  --color-ink: #0f1115;
+  --color-paper: #fbfaf8;
+  --color-muted: #6b7280;
+
+  --color-school: #3b6ea5;
+  --color-deen: #2f7d63;
+  --color-ai: #7c5cbf;
+  --color-money: #b8823a;
+  --color-physique: #b5513f;
+}
+
+:root {
+  color-scheme: light dark;
+  --bg: #fbfaf8;
+  --fg: #0f1115;
+  --card: #ffffff;
+  --line: #e7e4df;
+  --dim: #6b7280;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0f1115;
+    --fg: #f2f0ed;
+    --card: #181b21;
+    --line: #2a2e37;
+    --dim: #9aa1ad;
+  }
+}
+
+html, body {
+  background: var(--bg);
+  color: var(--fg);
+}
+
+body {
+  margin: 0;
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  /* room for the phone's notch and home indicator */
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  -webkit-font-smoothing: antialiased;
+}
+
+.card {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+}
+
+.dim { color: var(--dim); }
+
+/* Domain accent, used as a left rule on schedule blocks */
+.d-school   { border-left-color: var(--color-school); }
+.d-deen     { border-left-color: var(--color-deen); }
+.d-ai       { border-left-color: var(--color-ai); }
+.d-money    { border-left-color: var(--color-money); }
+.d-physique { border-left-color: var(--color-physique); }

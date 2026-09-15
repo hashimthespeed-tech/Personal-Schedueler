@@ -18,8 +18,8 @@
  */
 
 import { DateTime } from "luxon";
-import type { IsoDate, MinuteOfDay } from "./types.js";
-import { rawPrayerTimes, type PrayerConfig, LA_MESA } from "./prayer.js";
+import type { IsoDate, MinuteOfDay } from "./types";
+import { rawPrayerTimes, type PrayerConfig, LA_MESA } from "./prayer";
 
 export interface SleepModel {
   /** fixed schedulable-day start, minutes since midnight */

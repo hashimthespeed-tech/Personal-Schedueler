@@ -7,12 +7,12 @@
  */
 
 import { DateTime } from "luxon";
-import type { FixedCommitment, IsoDate, MinuteOfDay, Slot, TimeRange } from "./types.js";
-import { subtractRanges, hm } from "./types.js";
-import { dayEnvelope, type SleepModel, DEFAULT_SLEEP } from "./sleep.js";
-import { prayerBlocks, type PrayerConfig, LA_MESA } from "./prayer.js";
-import { energyAt, type EnergyOverride } from "./energy.js";
-import { fixedCommitmentsFor, homeTimeFor } from "../data/school.js";
+import type { FixedCommitment, IsoDate, MinuteOfDay, Slot, TimeRange } from "./types";
+import { subtractRanges, hm } from "./types";
+import { dayEnvelope, type SleepModel, DEFAULT_SLEEP } from "./sleep";
+import { prayerBlocks, type PrayerConfig, LA_MESA } from "./prayer";
+import { energyAt, type EnergyOverride } from "./energy";
+import { fixedCommitmentsFor, homeTimeFor } from "../data/school";
 
 /**
  * Arriving home: decompress and eat. The training plan calls for two full

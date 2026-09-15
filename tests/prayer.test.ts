@@ -5,8 +5,8 @@ import {
   maghribOffsetFromSunset,
   islamicMidnightMinute,
   JAFARI_ANGLES,
-} from "../src/core/prayer.js";
-import { hm } from "../src/core/types.js";
+} from "../src/core/prayer";
+import { hm } from "../src/core/types";
 
 describe("Jafari prayer times (La Mesa, CA)", () => {
   it("uses Jafari angles", () => {

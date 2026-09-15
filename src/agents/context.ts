@@ -10,15 +10,15 @@
 
 import { and, desc, eq, gte, inArray, sql } from "drizzle-orm";
 import { DateTime } from "luxon";
-import { db } from "../db/index.js";
+import { db } from "../db/index";
 import {
   assignments, blocks, checkIns, courses, goals, liftLog, metrics, prayerLog, settings, tasks, unplaced,
-} from "../db/schema.js";
-import { prayerBlocks, LA_MESA, type PrayerConfig } from "../core/prayer.js";
-import { sleepNightFor, bedtimeFor, DEFAULT_SLEEP, type SleepModel } from "../core/sleep.js";
-import { evaluateGate } from "../coach/gating.js";
-import { to12h, toHm, type IsoDate } from "../core/types.js";
-import type { SpecialistName } from "./specialists.js";
+} from "../db/schema";
+import { prayerBlocks, LA_MESA, type PrayerConfig } from "../core/prayer";
+import { sleepNightFor, bedtimeFor, DEFAULT_SLEEP, type SleepModel } from "../core/sleep";
+import { evaluateGate } from "../coach/gating";
+import { to12h, toHm, type IsoDate } from "../core/types";
+import type { SpecialistName } from "./specialists";
 
 export function today(zone = LA_MESA.timezone): IsoDate {
   const iso = DateTime.now().setZone(zone).toISODate();

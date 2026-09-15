@@ -1,0 +1,5 @@
+{
+  "crons": [
+    { "path": "/api/replan?review=1", "schedule": "0 5 * * *" }
+  ]
+}

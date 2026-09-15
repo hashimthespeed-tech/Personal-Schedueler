@@ -20,7 +20,7 @@
  * the athlete will fail is worse than saying the equipment is the problem.
  */
 
-import type { Exercise } from "./program.js";
+import type { Exercise } from "./program";
 
 /** Plates on hand, per side. */
 export const PLATE_INVENTORY = [10, 15, 25] as const;

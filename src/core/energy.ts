@@ -10,9 +10,9 @@
  * degraded evening slots and project work belongs in the morning.
  */
 
-import type { Energy, MinuteOfDay } from "./types.js";
-import { hm } from "./types.js";
-import { PRACTICE_DAYS } from "../data/school.js";
+import type { Energy, MinuteOfDay } from "./types";
+import { hm } from "./types";
+import { PRACTICE_DAYS } from "../data/school";
 
 const RANK: Record<Energy, number> = { low: 0, med: 1, high: 2 };
 

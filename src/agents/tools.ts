@@ -8,7 +8,7 @@
 
 import type Anthropic from "@anthropic-ai/sdk";
 import { z } from "zod";
-import { DOMAINS } from "../db/schema.js";
+import { DOMAINS } from "../db/schema";
 
 export const emitTaskInput = z.object({
   title: z.string().min(1),

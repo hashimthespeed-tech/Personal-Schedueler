@@ -8,14 +8,14 @@
 
 import type Anthropic from "@anthropic-ai/sdk";
 import { eq } from "drizzle-orm";
-import { db } from "../db/index.js";
-import { agentThreads, metrics, tasks } from "../db/schema.js";
-import { anthropic, AGENT_MODEL, describeApiError } from "./client.js";
-import { SPECIALIST_TOOLS, emitTaskInput, logMetricInput, closeTaskInput } from "./tools.js";
-import { SPECIALISTS, type SpecialistName } from "./specialists.js";
-import { buildContext, today } from "./context.js";
-import { replan } from "../core/replan.js";
-import { hm, type IsoDate } from "../core/types.js";
+import { db } from "../db/index";
+import { agentThreads, metrics, tasks } from "../db/schema";
+import { anthropic, AGENT_MODEL, describeApiError } from "./client";
+import { SPECIALIST_TOOLS, emitTaskInput, logMetricInput, closeTaskInput } from "./tools";
+import { SPECIALISTS, type SpecialistName } from "./specialists";
+import { buildContext, today } from "./context";
+import { replan } from "../core/replan";
+import { hm, type IsoDate } from "../core/types";
 
 const MAX_TURNS = 8;
 const MAX_TOKENS = 16000;

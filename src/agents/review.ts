@@ -15,12 +15,12 @@
 import type Anthropic from "@anthropic-ai/sdk";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
-import { db } from "../db/index.js";
-import { planReviews, tasks } from "../db/schema.js";
-import { anthropic, AGENT_MODEL, describeApiError } from "./client.js";
-import { buildContext, today } from "./context.js";
-import { replan, type ReplanResult } from "../core/replan.js";
-import { to12h, type IsoDate } from "../core/types.js";
+import { db } from "../db/index";
+import { planReviews, tasks } from "../db/schema";
+import { anthropic, AGENT_MODEL, describeApiError } from "./client";
+import { buildContext, today } from "./context";
+import { replan, type ReplanResult } from "../core/replan";
+import { to12h, type IsoDate } from "../core/types";
 
 const MAX_ITERATIONS = 2;
 

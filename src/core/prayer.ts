@@ -18,7 +18,7 @@
 
 import * as adhan from "adhan";
 import { DateTime } from "luxon";
-import type { IsoDate, MinuteOfDay, TimeRange } from "./types.js";
+import type { IsoDate, MinuteOfDay, TimeRange } from "./types";
 
 export interface PrayerConfig {
   latitude: number;

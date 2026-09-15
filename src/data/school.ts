@@ -9,8 +9,8 @@
  * and has neither weights nor a private space.
  */
 
-import type { FixedCommitment, MinuteOfDay } from "../core/types.js";
-import { hm } from "../core/types.js";
+import type { FixedCommitment, MinuteOfDay } from "../core/types";
+import { hm } from "../core/types";
 
 export const TERM_S1 = { start: "2026-08-12", end: "2026-12-17" } as const;
 

@@ -22,10 +22,10 @@ import type {
   TimeRange,
   Unplaced,
   UnplacedReason,
-} from "./types.js";
-import { to12h } from "./types.js";
-import { energySatisfies } from "./energy.js";
-import { datesBetween } from "./slots.js";
+} from "./types";
+import { to12h } from "./types";
+import { energySatisfies } from "./energy";
+import { datesBetween } from "./slots";
 
 /**
  * How much of available free time the solver is willing to fill.

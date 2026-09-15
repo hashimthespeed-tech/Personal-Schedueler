@@ -10,9 +10,9 @@ import {
   MAX_LOAD,
   BAR_WEIGHT,
   type ExerciseLog,
-} from "../src/coach/progression.js";
-import { evaluateGate, bodyweightTrend } from "../src/coach/gating.js";
-import { PROGRAM, ANKLE_RESTRICTIONS, type Exercise } from "../src/coach/program.js";
+} from "../src/coach/progression";
+import { evaluateGate, bodyweightTrend } from "../src/coach/gating";
+import { PROGRAM, ANKLE_RESTRICTIONS, type Exercise } from "../src/coach/program";
 
 const squat: Exercise = {
   name: "Back squat", sets: 4, repRange: [10, 15], startingWeight: 70, lower: true, movementTags: ["squat"],

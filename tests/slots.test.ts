@@ -1,9 +1,9 @@
 import { describe, it, expect } from "vitest";
-import { slotsForDate, slotsForHorizon, totalMinutes, weekdayOf } from "../src/core/slots.js";
-import { fixedCommitmentsFor, lunchFor, homeTimeFor, BELL_REG, BELL_FRI } from "../src/data/school.js";
-import { prayerBlocks } from "../src/core/prayer.js";
-import { bedtimeFor } from "../src/core/sleep.js";
-import { hm, overlaps, toHm } from "../src/core/types.js";
+import { slotsForDate, slotsForHorizon, totalMinutes, weekdayOf } from "../src/core/slots";
+import { fixedCommitmentsFor, lunchFor, homeTimeFor, BELL_REG, BELL_FRI } from "../src/data/school";
+import { prayerBlocks } from "../src/core/prayer";
+import { bedtimeFor } from "../src/core/sleep";
+import { hm, overlaps, toHm } from "../src/core/types";
 
 // 2026-09-14 is a Monday.
 const MON = "2026-09-14";

@@ -6,8 +6,8 @@ import {
   dayEnvelope,
   weeksIntoRamp,
   DEFAULT_SLEEP,
-} from "../src/core/sleep.js";
-import { hm, toHm } from "../src/core/types.js";
+} from "../src/core/sleep";
+import { hm, toHm } from "../src/core/types";
 
 describe("sleep model", () => {
   it("starts at the user's current bedtime, not the goal", () => {
