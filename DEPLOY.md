@@ -63,9 +63,24 @@ openssl rand -hex 24    # run twice: SESSION_PASSWORD, then CRON_SECRET
 Nine values, listed in the table in step 3 below. Then:
 
 ```
+npm run db:check   # confirms the connection works before anything else
 npm run db:push    # creates the tables
 npm run db:seed    # loads your courses, bell schedules, settings, goals
 ```
+
+`db:check` exists because `db:push` hides connection failures — it prints
+"Pulling schema from database…", exits without an error, and creates nothing.
+If `db:push` returns to the prompt without saying **Changes applied**, run
+`db:check` and it will tell you exactly what is wrong with the URL.
+
+Common causes, all of which `db:check` names:
+
+- The Neon dashboard offers a `psql '...'` command; only the URL inside the
+  quotes belongs in `DATABASE_URL`
+- Neon requires `?sslmode=require` on the end
+- A password containing `@ : / ? #` has to be URL-encoded, or reset it in
+  Neon to something alphanumeric
+- A paused Neon project times out
 
 `db:seed` should print 7 courses and 75 fixed commitments. If it does, the
 database is ready.

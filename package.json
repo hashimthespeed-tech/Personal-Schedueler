@@ -14,7 +14,8 @@
     "db:generate": "drizzle-kit generate",
     "db:push": "drizzle-kit push",
     "db:seed": "tsx src/db/seed.ts",
-    "check": "npm run typecheck && npm run test"
+    "check": "npm run typecheck && npm run test",
+    "db:check": "tsx src/db/check.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.125.0",

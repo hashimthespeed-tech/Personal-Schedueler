@@ -69,6 +69,7 @@ npm run test        # vitest
 npm run typecheck   # tsc --noEmit
 npm run check       # both
 npm run dev         # next dev
+npm run db:check    # diagnose the database connection
 npm run db:push     # apply schema
 npm run db:seed     # load courses, bells, settings, starter goals
 ```
