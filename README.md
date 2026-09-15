@@ -33,14 +33,34 @@ item. That surfaces an overcommitted week before it starts.
 
 ## Status
 
+Complete and verified end-to-end against Postgres: seed, solve, render, check in.
+86 tests pass.
+
 | Area | State |
 |---|---|
 | Prayer times (Jafari) | done, tested |
 | Sleep model + bedtime ramp | done, tested |
-| Slot builder | done |
-| Stage A solver | done, tests pending |
-| Training program + progression + gating | done, tests pending |
-| Database, UI, push, agents | not started |
+| Slot builder | done, tested |
+| Stage A solver | done, tested |
+| Training program, progression, volume gating | done, tested |
+| Database schema + seed | done |
+| Four specialists + Stage B review | done |
+| PWA: today, week, check-in, agent chat, settings | done |
+| Web push | done — needs an installed PWA on iOS |
+
+## Setup
+
+```bash
+npm install
+cp .env.example .env          # then fill in DATABASE_URL and ANTHROPIC_API_KEY
+npx web-push generate-vapid-keys   # paste into .env
+npm run db:push               # create tables
+npm run db:seed               # load the real schedule
+npm run dev
+```
+
+`.env.example` is committed; `.env` is not. Keys belong in `.env` locally, or in
+your host's environment variables when deployed — never in a tracked file.
 
 ## Commands
 
@@ -49,7 +69,29 @@ npm run test        # vitest
 npm run typecheck   # tsc --noEmit
 npm run check       # both
 npm run dev         # next dev
+npm run db:push     # apply schema
+npm run db:seed     # load courses, bells, settings, starter goals
 ```
+
+## Scheduling behaviour
+
+Two caps shape the week. The **per-day cap** (60% of that day's own free time)
+is the operative one and the thing to change if plans feel too light or heavy;
+the weekly cap is a backstop that only binds if the daily cap is raised.
+
+Tasks are placed **least-slack-first** — the free capacity a task could legally
+use, minus what it needs. This subsumes deadline urgency rather than competing
+with it, because slots past a deadline are not eligible.
+
+When something doesn't fit, `unplaced` says why, and the reasons are
+distinguishable: a day already at its cap reports `day_at_capacity`, which is a
+different problem from `no_slot_long_enough` and reads very differently on a
+screen showing visibly empty time.
+
+Weekend capacity is the weakest number in the model. Weekdays subtract school,
+practice and commute; a weekend day subtracts only sleep, meals and prayer, so
+its free time is overstated. Adding real weekend commitments fixes that
+properly.
 
 ## Configuration notes
 

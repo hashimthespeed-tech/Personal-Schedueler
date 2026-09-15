@@ -49,8 +49,9 @@ export default async function WeekPage() {
           <div className="h-full rounded-full" style={{ width: `${Math.min(100, pct)}%`, background: "var(--fg)" }} />
         </div>
         <p className="dim mt-2 text-xs leading-relaxed">
-          {pct}% booked. The solver stops at 70% on purpose — a week with every minute
-          filled is a week nobody follows.
+          {pct}% booked. No single day goes past 60% of its own free time — a week with
+          every minute filled is a week nobody follows, and one loaded day is how that
+          starts.
         </p>
       </section>
 
