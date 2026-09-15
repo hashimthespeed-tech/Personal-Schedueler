@@ -80,6 +80,7 @@ export type UnplacedReason =
   | "no_slot_on_allowed_weekday"
   | "spacing_conflict"
   | "movement_restricted"
+  | "day_at_capacity"
   | "horizon_full";
 
 export interface Unplaced {

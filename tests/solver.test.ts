@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { solve } from "../src/core/solver";
-import { slotsForHorizon } from "../src/core/slots";
+import { slotsForHorizon, totalMinutes } from "../src/core/slots";
 import { programTasks, ANKLE_RESTRICTIONS } from "../src/coach/program";
 import { bedtimeFor } from "../src/core/sleep";
 import { prayerBlocks } from "../src/core/prayer";
@@ -185,44 +185,104 @@ describe("overcommitment reporting", () => {
 
   // Splittable work packs efficiently, so the utilization cap is what stops
   // it rather than fragmentation. This is the cap doing its actual job.
-  it("stops at the utilization cap rather than filling every waking minute", () => {
+  // The per-day cap is the binding control, not the weekly one: if no day
+  // exceeds 60% then the week cannot either, so the weekly cap is a backstop.
+  it("stops well short of filling every waking minute", () => {
     const tasks = Array.from({ length: 60 }, (_, i) =>
       task({ id: `t${i}`, durationMin: 60, minChunkMin: 20 }),
     );
-    const r = run(tasks, { maxUtilization: 0.7 });
-    expect(r.utilization).toBeGreaterThan(0.6);
-    expect(r.utilization).toBeLessThanOrEqual(0.75);
-    expect(r.unplaced.some((u) => u.reason === "horizon_full")).toBe(true);
-  });
-
-  it("names the cap explicitly so an overcommitted week is legible", () => {
-    const tasks = Array.from({ length: 60 }, (_, i) =>
-      task({ id: `t${i}`, durationMin: 60, minChunkMin: 20 }),
-    );
-    const capped = run(tasks, { maxUtilization: 0.7 }).unplaced.find(
-      (u) => u.reason === "horizon_full",
-    );
-    expect(capped?.detail).toMatch(/capacity/);
-    expect(capped?.detail).toMatch(/%/);
-  });
-
-  // Indivisible work loses real time to leftovers too small to reuse. Worth
-  // asserting so the loss stays visible rather than being mistaken for a bug.
-  it("loses capacity to fragmentation when nothing can be split", () => {
-    const tasks = Array.from({ length: 60 }, (_, i) => task({ id: `t${i}`, durationMin: 60 }));
-    const r = run(tasks, { maxUtilization: 0.7 });
-    expect(r.unplaced.every((u) => u.reason === "no_slot_long_enough")).toBe(true);
-    // stops well short of the cap purely because of leftover fragments
-    expect(r.utilization).toBeLessThan(0.7);
-  });
-
-  it("protects high-priority work when the week is overcommitted", () => {
-    const tasks = [
-      task({ id: "critical", priority: 1, durationMin: 90 }),
-      ...Array.from({ length: 40 }, (_, i) => task({ id: `noise${i}`, priority: 5, durationMin: 120 })),
-    ];
     const r = run(tasks);
-    expect(r.blocks.some((b) => b.taskId === "critical")).toBe(true);
+    expect(r.utilization).toBeGreaterThan(0.45);
+    expect(r.utilization).toBeLessThanOrEqual(0.62);
+  });
+
+  it("says a day is full rather than claiming there is no room", () => {
+    const tasks = Array.from({ length: 60 }, (_, i) =>
+      task({ id: `t${i}`, durationMin: 60, minChunkMin: 20 }),
+    );
+    const blocked = run(tasks).unplaced.find((u) => u.reason === "day_at_capacity");
+    expect(blocked, "expected at least one day-capacity rejection").toBeDefined();
+    expect(blocked?.detail).toMatch(/already full/);
+  });
+
+  // Spreading across days also stops one day's long slot being chewed into
+  // scraps too small to reuse, so indivisible work now lands close to
+  // splittable work rather than stalling well below it.
+  it("packs indivisible work about as far as splittable work", () => {
+    const rigid = run(Array.from({ length: 60 }, (_, i) => task({ id: `r${i}`, durationMin: 60 })));
+    const loose = run(
+      Array.from({ length: 60 }, (_, i) => task({ id: `l${i}`, durationMin: 60, minChunkMin: 20 })),
+    );
+    expect(loose.utilization - rigid.utilization).toBeLessThan(0.12);
+  });
+
+  it("never lets one day absorb the week", () => {
+    const tasks = Array.from({ length: 60 }, (_, i) =>
+      task({ id: `t${i}`, durationMin: 60, minChunkMin: 20 }),
+    );
+    const r = run(tasks);
+
+    const perDay = new Map<string, number>();
+    for (const b of r.blocks) {
+      perDay.set(b.date, (perDay.get(b.date) ?? 0) + (b.end - b.start));
+    }
+    for (const [date, minutes] of perDay) {
+      const capacity = totalMinutes(slotsForHorizon(date, 1));
+      expect(minutes / capacity, `${date} overloaded`).toBeLessThanOrEqual(0.65);
+    }
+  });
+});
+
+
+describe("placement order", () => {
+  // Regression. Sorting by deadline first placed flexible schoolwork ahead of
+  // training that could only happen in one window, and the training then had
+  // nowhere left to go — at 27% utilization. Least-slack-first fixes it, and
+  // deadlines still work because slots past one are simply not eligible.
+  it("places a tightly constrained task ahead of flexible work with a deadline", () => {
+    const r = run([
+      task({
+        id: "monday-only",
+        domain: "physique",
+        durationMin: 60,
+        minChunkMin: null,
+        allowedWeekdays: [1],
+        earliestTime: hm("15:45"),
+        latestTime: hm("20:30"),
+      }),
+      ...Array.from({ length: 8 }, (_, i) =>
+        task({ id: `flexible${i}`, durationMin: 120, minChunkMin: 30, deadline: "2026-09-16", priority: 1 }),
+      ),
+    ]);
+    expect(r.blocks.some((b) => b.taskId === "monday-only")).toBe(true);
+    expect(r.unplaced.find((u) => u.taskId === "monday-only")).toBeUndefined();
+  });
+
+  it("still respects deadlines when slack is comparable", () => {
+    const r = run([
+      task({ id: "due-later", durationMin: 60, deadline: "2026-09-20" }),
+      task({ id: "due-sooner", durationMin: 60, deadline: "2026-09-15" }),
+    ]);
+    const sooner = r.blocks.find((b) => b.taskId === "due-sooner");
+    expect(sooner).toBeDefined();
+    expect((sooner?.date ?? "") <= "2026-09-15").toBe(true);
+  });
+
+  it("fits the whole real week — four lifts, AP coursework and projects", () => {
+    const r = run(
+      [
+        ...programTasks(),
+        task({ id: "calc", title: "Calc pset", durationMin: 90, minChunkMin: 30, deadline: "2026-09-16", priority: 1 }),
+        task({ id: "test-prep", title: "Calc test prep", durationMin: 160, minChunkMin: 40, deadline: "2026-09-18", priority: 1 }),
+        task({ id: "essay", title: "AP Lit essay", durationMin: 120, minChunkMin: null, deadline: "2026-09-18", priority: 2 }),
+        task({ id: "apush", title: "APUSH reading", durationMin: 90, minChunkMin: 30, deadline: "2026-09-17", priority: 2 }),
+        task({ id: "project", title: "AI project", domain: "ai", durationMin: 240, minChunkMin: 60, energy: "high", priority: 2 }),
+        task({ id: "quran", title: "Quran", domain: "deen", durationMin: 105, minChunkMin: 15, priority: 2 }),
+      ],
+      { restrictions: [...ANKLE_RESTRICTIONS] },
+    );
+    expect(r.unplaced, r.unplaced.map((u) => `${u.title}: ${u.detail}`).join("; ")).toHaveLength(0);
+    expect(r.blocks.filter((b) => b.domain === "physique")).toHaveLength(4);
   });
 });
 

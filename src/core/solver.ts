@@ -28,12 +28,29 @@ import { energySatisfies } from "./energy";
 import { datesBetween } from "./slots";
 
 /**
- * How much of available free time the solver is willing to fill.
- *
- * A schedule that consumes every waking minute is one nobody follows. This
- * leaves real slack for the parts of a life that are not tasks.
+ * Weekly ceiling. A backstop rather than the operative control — with the
+ * per-day cap below at 0.6, a week can never exceed 0.6 either, so this only
+ * binds if someone raises the daily cap.
  */
 export const DEFAULT_MAX_UTILIZATION = 0.7;
+
+/**
+ * Per-day ceiling, as a share of that day's own free time.
+ *
+ * This is the control that actually shapes the week, and the one to change if
+ * the plan feels too light or too heavy.
+ *
+ * Without it, greedy first-fit packs the earliest days solid — one run put
+ * 8 hours on a Monday and 1.5 on the Tuesday after it. Both days were legal
+ * and the week was only 27% booked; it was simply not a week anyone would
+ * follow.
+ *
+ * Caveat worth knowing: weekend capacity is the weakest number in the model.
+ * Weekdays subtract school, practice and commute, but a weekend day subtracts
+ * only sleep, meals and prayer, so its "free" time is overstated and 60% of it
+ * is still a lot. Adding real weekend commitments corrects this properly.
+ */
+export const DEFAULT_MAX_DAILY_UTILIZATION = 0.6;
 
 /** Domains that can be worked on at school during the free period. */
 const OFFSITE_DOMAINS: ReadonlySet<Domain> = new Set<Domain>(["school", "ai"]);
@@ -46,6 +63,7 @@ export interface SolverInput {
   /** movement tags the athlete must not perform, e.g. ankle restrictions */
   restrictions?: string[];
   maxUtilization?: number;
+  maxDailyUtilization?: number;
   /** last time each spacing group was satisfied, as an absolute minute */
   spacingHistory?: Record<string, number>;
 }
@@ -54,6 +72,13 @@ interface MutableSlot {
   slot: Slot;
   dayIndex: number;
   free: TimeRange[];
+}
+
+/** Running per-day budget, so no single day absorbs the whole week. */
+interface DayBudget {
+  capacity: number;
+  used: number;
+  limit: number;
 }
 
 function absoluteMinute(dayIndex: number, minute: MinuteOfDay): number {
@@ -135,6 +160,7 @@ const REASON_TEXT: Record<UnplacedReason, string> = {
   no_slot_on_allowed_weekday: "no free time on the days it is allowed",
   spacing_conflict: "too close to the previous session",
   movement_restricted: "uses a movement currently restricted",
+  day_at_capacity: "the only days it could go are already full",
   horizon_full: "the week is full",
 };
 
@@ -154,30 +180,39 @@ function describe(task: Task, reason: UnplacedReason, extra?: string): Unplaced 
 }
 
 /**
- * Order tasks for placement: deadline urgency, then priority, then how few
- * slots could hold them.
+ * Order tasks for placement by least slack first.
  *
- * The third key is what makes a greedy pass work. A task that fits almost
- * nowhere must go down before a flexible one eats its only opening.
+ * Slack is the free capacity a task could legally use, minus what it needs.
+ * A lift that may only happen on Monday afternoon has very little; an essay
+ * due Friday that could go anywhere has a great deal.
+ *
+ * This subsumes deadline urgency rather than competing with it: slots past a
+ * deadline are not eligible, so a task due tomorrow already has less capacity
+ * to draw on and sorts earlier on its own. Sorting by deadline first — as an
+ * earlier version did — placed flexible schoolwork ahead of tightly
+ * constrained training, and the training then had nowhere to go at 27%
+ * utilization.
  */
 function orderTasks(tasks: Task[], slots: MutableSlot[]): Task[] {
-  const eligibleCount = new Map<string, number>();
+  const slack = new Map<string, number>();
+
   for (const t of tasks) {
-    let n = 0;
+    let capacity = 0;
     for (const ms of slots) {
-      if (slotEligibility(t, ms, false).ok) n++;
+      if (!slotEligibility(t, ms, true).ok) continue;
+      for (const r of usableRanges(t, ms)) capacity += r.end - r.start;
     }
-    eligibleCount.set(t.id, n);
+    slack.set(t.id, capacity - t.durationMin);
   }
 
   return [...tasks].sort((a, b) => {
+    const sa = slack.get(a.id) ?? 0;
+    const sb = slack.get(b.id) ?? 0;
+    if (sa !== sb) return sa - sb;
+    if (a.priority !== b.priority) return a.priority - b.priority;
     const da = a.deadline ?? "9999-12-31";
     const db = b.deadline ?? "9999-12-31";
     if (da !== db) return da < db ? -1 : 1;
-    if (a.priority !== b.priority) return a.priority - b.priority;
-    const ca = eligibleCount.get(a.id) ?? 0;
-    const cb = eligibleCount.get(b.id) ?? 0;
-    if (ca !== cb) return ca - cb;
     return b.durationMin - a.durationMin;
   });
 }
@@ -199,6 +234,17 @@ export function solve(input: SolverInput): SolverResult {
 
   const freeMinutes = mutable.reduce((sum, m) => sum + (m.slot.end - m.slot.start), 0);
   const budget = Math.floor(freeMinutes * maxUtilization);
+
+  const maxDaily = input.maxDailyUtilization ?? DEFAULT_MAX_DAILY_UTILIZATION;
+  const dayBudgets = new Map<string, DayBudget>();
+  for (const m of mutable) {
+    const entry = dayBudgets.get(m.slot.date) ?? { capacity: 0, used: 0, limit: 0 };
+    entry.capacity += m.slot.end - m.slot.start;
+    dayBudgets.set(m.slot.date, entry);
+  }
+  for (const entry of dayBudgets.values()) {
+    entry.limit = Math.floor(entry.capacity * maxDaily);
+  }
 
   const blocks: Block[] = [];
   const unplaced: Unplaced[] = [];
@@ -230,7 +276,7 @@ export function solve(input: SolverInput): SolverResult {
       continue;
     }
 
-    const placed = placeTask(task, mutable, spacing, blocks);
+    const placed = placeTask(task, mutable, spacing, blocks, dayBudgets);
     if (placed.ok) {
       scheduledMinutes += task.durationMin;
     } else {
@@ -252,14 +298,37 @@ function placeTask(
   slots: MutableSlot[],
   spacing: Record<string, number>,
   out: Block[],
+  dayBudgets: Map<string, DayBudget>,
 ): { ok: true } | { ok: false; reason: UnplacedReason } {
   const splittable = task.minChunkMin != null && task.minChunkMin < task.durationMin;
   const minChunk = splittable ? (task.minChunkMin ?? task.durationMin) : task.durationMin;
 
-  // strict energy match first, then allow a downgrade rather than dropping it
+  // Strict energy match first, then a downgrade rather than dropping it.
+  //
+  // The day cap is only ever relaxed for work with a hard deadline. Without
+  // that restriction every task falls through to the relaxed pass and the cap
+  // stops meaning anything — one run put 89% of a Monday's free time on that
+  // Monday. Work with no deadline is better left unplaced and reported than
+  // silently piled onto an already-full day.
+  const mayOverfillDay = task.deadline !== undefined;
+  let lastReason: UnplacedReason = "no_slot_long_enough";
+
   for (const relaxEnergy of [false, true]) {
-    const attempt = tryPlace(task, slots, spacing, minChunk, splittable, relaxEnergy);
-    if (attempt.ok) {
+    for (const respectDayCap of mayOverfillDay ? [true, false] : [true]) {
+      const attempt = tryPlace(task, slots, spacing, minChunk, splittable, relaxEnergy, respectDayCap ? dayBudgets : null);
+      if (!attempt.ok) {
+        const retryable =
+          attempt.reason === "no_slot_in_time_window" ||
+          attempt.reason === "no_slot_long_enough" ||
+          attempt.reason === "day_at_capacity";
+        if (!retryable) return { ok: false, reason: attempt.reason };
+        lastReason = attempt.reason;
+        continue;
+      }
+      for (const b of attempt.blocks) {
+        const entry = dayBudgets.get(b.date);
+        if (entry) entry.used += b.end - b.start;
+      }
       out.push(...attempt.blocks);
       if (task.spacing) {
         const last = attempt.blocks[attempt.blocks.length - 1];
@@ -270,10 +339,9 @@ function placeTask(
       }
       return { ok: true };
     }
-    if (attempt.reason !== "no_slot_in_time_window") return { ok: false, reason: attempt.reason };
   }
 
-  return { ok: false, reason: "no_slot_long_enough" };
+  return { ok: false, reason: lastReason };
 }
 
 function tryPlace(
@@ -283,6 +351,7 @@ function tryPlace(
   minChunk: number,
   splittable: boolean,
   relaxEnergy: boolean,
+  dayBudgets: Map<string, DayBudget> | null,
 ):
   | { ok: true; blocks: Block[] }
   | { ok: false; reason: UnplacedReason } {
@@ -290,6 +359,7 @@ function tryPlace(
   const chunks: { ms: MutableSlot; range: TimeRange }[] = [];
   let sawEligibleSlot = false;
   let spacingBlocked = false;
+  let dayCapBlocked = false;
 
   for (const ms of slots) {
     if (remaining <= 0) break;
@@ -309,9 +379,19 @@ function tryPlace(
       }
     }
 
+    const budget = dayBudgets?.get(ms.slot.date);
+    const takenToday = chunks
+      .filter((c) => c.ms.slot.date === ms.slot.date)
+      .reduce((sum, c) => sum + (c.range.end - c.range.start), 0);
+    let dayHeadroom = budget ? budget.limit - budget.used - takenToday : Number.POSITIVE_INFINITY;
+    if (budget && dayHeadroom < minChunk) {
+      dayCapBlocked = true;
+      continue;
+    }
+
     for (const range of usableRanges(task, ms)) {
       if (remaining <= 0) break;
-      const available = range.end - range.start;
+      const available = Math.min(range.end - range.start, dayHeadroom);
       if (available < minChunk) continue;
 
       const take = Math.min(remaining, available);
@@ -322,6 +402,7 @@ function tryPlace(
       const placed = { start: range.start, end: range.start + take };
       chunks.push({ ms, range: placed });
       remaining -= take;
+      dayHeadroom -= take;
     }
   }
 
@@ -330,6 +411,9 @@ function tryPlace(
       return { ok: false, reason: spacingBlocked ? "spacing_conflict" : "no_slot_in_time_window" };
     }
     if (spacingBlocked && chunks.length === 0) return { ok: false, reason: "spacing_conflict" };
+    // a day already at its cap is a different problem from a day with no room,
+    // and the distinction matters on a screen showing visibly empty time
+    if (dayCapBlocked) return { ok: false, reason: "day_at_capacity" };
     return { ok: false, reason: "no_slot_long_enough" };
   }
 
