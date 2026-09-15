@@ -31,6 +31,10 @@ function toSolverTask(row: typeof tasks.$inferSelect): Task {
     movementTags: row.movementTags ?? undefined,
     dayPart: (row.dayPart as Task["dayPart"]) ?? undefined,
     recurrence: (row.recurrence as Task["recurrence"]) ?? "once",
+    oncePerDay: row.oncePerDay,
+    spacingGroupHint: row.spacingGroupHint ?? undefined,
+    steps: row.steps ?? undefined,
+    goalId: row.goalId ?? undefined,
     sourceAgent: row.sourceAgent as Task["sourceAgent"],
     ...(row.spacingGroup && row.spacingHours
       ? { spacing: { minHoursBetween: row.spacingHours, groupKey: row.spacingGroup } }
@@ -122,6 +126,9 @@ export async function replan(startDate: IsoDate): Promise<ReplanResult> {
           sourceAgent: b.sourceAgent,
           chunkIndex: b.chunkIndex ?? null,
           chunkCount: b.chunkCount ?? null,
+          notes: b.notes ?? null,
+          steps: b.steps ?? null,
+          goalId: b.goalId ?? null,
           planVersion,
         })),
       );

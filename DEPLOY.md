@@ -181,5 +181,9 @@ background jobs with the UI polling for results.
 
 ## Updating it later
 
-Push to `main` and Vercel redeploys automatically. If you change
-`src/db/schema.ts`, run `npm run db:push` again against the same database.
+Push to the branch and Vercel redeploys automatically.
+
+**When the schema changes, run `npm run db:push` again.** Deploying code that
+expects a column the database does not have makes every query using that table
+fail — the app looks unchanged or errors, and nothing says why. If a deploy
+seems to do nothing, run `npm run db:check`: it lists the tables it can see.

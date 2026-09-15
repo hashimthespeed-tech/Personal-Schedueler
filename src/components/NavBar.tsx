@@ -8,6 +8,7 @@ const LINKS = [
   { href: "/week", label: "Week" },
   { href: "/checkin", label: "Check in" },
   { href: "/agents/coach", label: "Agents" },
+  { href: "/stats", label: "Stats" },
   { href: "/debug", label: "State" },
 ];
 

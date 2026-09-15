@@ -86,10 +86,12 @@ describe("day parts", () => {
   });
 });
 
-describe("one training session a day", () => {
+describe("once per day", () => {
   // Three lifts with no spacing all landed on the same Monday — four sessions
-  // in one day, every one of them individually legal.
-  it("never stacks two sessions on one day, even with no spacing set", () => {
+  // in one day, every one individually legal. The fix is a flag the emitting
+  // agent sets, not a rule the scheduler infers: two lifts in a day is a
+  // coaching judgement, and the scheduler is not the coach.
+  it("never stacks two flagged tasks on one day", () => {
     const lifts = ["A", "B", "C"].map((n) =>
       task({
         id: `lift${n}`,
@@ -98,6 +100,7 @@ describe("one training session a day", () => {
         energy: "med",
         priority: 2,
         allowedWeekdays: [1, 3, 5, 6],
+        oncePerDay: true,
       }),
     );
     const r = run(lifts);
@@ -110,9 +113,32 @@ describe("one training session a day", () => {
     expect(r.blocks).toHaveLength(3);
   });
 
-  it("still allows short physique habits alongside a session", () => {
+  // The other half of that decision: without the flag the scheduler stacks
+  // them, because it has no opinion about what the work is.
+  it("stacks freely when the flag is absent", () => {
+    const lifts = ["A", "B", "C"].map((n) =>
+      task({ id: `lift${n}`, durationMin: 50, energy: "med", priority: 2, allowedWeekdays: [1] }),
+    );
+    const r = run(lifts);
+    const monday = r.blocks.filter((b) => b.date === "2026-09-14");
+    expect(monday.length).toBeGreaterThan(1);
+  });
+
+  it("groups separately per agent and domain by default", () => {
     const r = run([
-      task({ id: "lift", title: "Lift", durationMin: 50, energy: "med", priority: 2, allowedWeekdays: [1] }),
+      task({ id: "lift", durationMin: 50, energy: "med", priority: 2, allowedWeekdays: [1], oncePerDay: true }),
+      task({
+        id: "study", domain: "school", title: "Study", durationMin: 50,
+        energy: "med", priority: 2, allowedWeekdays: [1], oncePerDay: true, sourceAgent: "tutor",
+      }),
+    ]);
+    // different agent and domain, so they share no group and both fit Monday
+    expect(r.blocks.filter((b) => b.date === "2026-09-14")).toHaveLength(2);
+  });
+
+  it("still allows short habits alongside a flagged session", () => {
+    const r = run([
+      task({ id: "lift", title: "Lift", durationMin: 50, energy: "med", priority: 2, allowedWeekdays: [1], oncePerDay: true }),
       task({ id: "weigh", durationMin: 5, dayPart: "morning", recurrence: "daily" }),
     ]);
     const monday = r.blocks.filter((b) => b.date === MON);

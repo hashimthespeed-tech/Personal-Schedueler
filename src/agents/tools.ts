@@ -27,6 +27,9 @@ export const emitTaskInput = z.object({
   spacingGroup: z.string().nullable().optional(),
   movementTags: z.array(z.string()).nullable().optional(),
   notes: z.string().nullable().optional(),
+  steps: z.array(z.string()).nullable().optional(),
+  oncePerDay: z.boolean().nullable().optional(),
+  goalId: z.number().int().nullable().optional(),
 });
 
 export type EmitTaskInput = z.infer<typeof emitTaskInput>;
@@ -119,7 +122,32 @@ export const EMIT_TASK: Anthropic.Tool = {
         description:
           "Physique work only. Movement patterns involved, checked against injury restrictions before the task is ever placed.",
       },
-      notes: { type: ["string", "null"], description: "Anything the user should see on the block itself." },
+      notes: {
+        type: ["string", "null"],
+        description: "One line shown on the block itself. Keep it short — detail goes in steps.",
+      },
+      steps: {
+        type: ["array", "null"],
+        items: { type: "string" },
+        description:
+          "The detail, one item per line — exercises with sets and reps, the parts of an " +
+          "assignment, what to cook. Hidden behind a tap, so put the whole thing here rather " +
+          "than cramming it into the title. A block titled 'Lift - Push' with six steps reads " +
+          "far better than a title listing six exercises.",
+      },
+      oncePerDay: {
+        type: ["boolean", "null"],
+        description:
+          "True when at most one of this kind of work should happen per day — training " +
+          "sessions, for instance. The scheduler enforces it; deciding it is yours. Without " +
+          "it, three separate lifts can all land on the same day, each individually legal.",
+      },
+      goalId: {
+        type: ["integer", "null"],
+        description:
+          "Which goal completing this counts toward, from the goals list you were shown. " +
+          "This is what makes progress measurable — an unlinked task contributes to nothing.",
+      },
     },
   },
 };

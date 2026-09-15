@@ -1,12 +1,16 @@
 import { desc, eq } from "drizzle-orm";
 import { db } from "@/db/index";
-import { blocks, planReviews, unplaced } from "@/db/schema";
+import { blocks, completions, goals, planReviews, unplaced } from "@/db/schema";
 import { prayerBlocks } from "@/core/prayer";
 import { sleepNightFor, bedtimeFor } from "@/core/sleep";
 import { today } from "@/agents/context";
 import { to12h } from "@/core/types";
 import { requireSession } from "@/lib/auth";
 import { InstallHint } from "@/components/InstallHint";
+import { BlockCard } from "@/components/BlockCard";
+import { GoalProgress } from "@/components/GoalProgress";
+import { statsByDomain, statsByGoal, datesInRange } from "@/core/stats";
+import { gte } from "drizzle-orm";
 import { DateTime } from "luxon";
 
 export const dynamic = "force-dynamic";
@@ -15,11 +19,26 @@ export default async function TodayPage() {
   await requireSession();
 
   const date = today();
-  const [todayBlocks, notFitting, latestReview] = await Promise.all([
+  const weekStart = datesInRange(date, 7)[0] ?? date;
+  const [todayBlocks, notFitting, latestReview, activeGoals, weekCompletions] = await Promise.all([
     db.select().from(blocks).where(eq(blocks.onDate, date)).orderBy(blocks.startMin),
     db.select().from(unplaced).orderBy(desc(unplaced.createdAt)).limit(6),
     db.select().from(planReviews).orderBy(desc(planReviews.createdAt)).limit(1),
+    db.select().from(goals).where(eq(goals.active, true)),
+    db.select().from(completions).where(gte(completions.onDate, weekStart)),
   ]);
+
+  const records = weekCompletions.map((c) => ({
+    onDate: c.onDate,
+    domain: c.domain,
+    goalId: c.goalId,
+    minutes: c.minutes,
+    skipped: c.skipped,
+    completedAt: c.completedAt,
+    plannedStartMin: c.plannedStartMin,
+  }));
+  const goalStats = statsByGoal(records, activeGoals.map((g) => ({ id: g.id, weeklyTarget: g.weeklyTarget })), 1);
+  const domainStats = statsByDomain(records, date);
 
   const prayers = prayerBlocks(date);
   const night = sleepNightFor(date);
@@ -81,31 +100,48 @@ export default async function TodayPage() {
           </p>
         ) : (
           <ul className="space-y-2">
-            {todayBlocks.map((b) => {
-              const past = b.endMin <= nowMin;
-              return (
-                <li
-                  key={b.id}
-                  className={`card d-${b.domain} border-l-4 p-3`}
-                  style={past ? { opacity: 0.45 } : undefined}
-                >
-                  <div className="flex items-baseline justify-between gap-3">
-                    <span className="text-sm font-medium">{b.title}</span>
-                    <span className="dim shrink-0 text-xs tabular-nums">
-                      {to12h(b.startMin)}–{to12h(b.endMin)}
-                    </span>
-                  </div>
-                  {b.chunkCount && b.chunkCount > 1 && (
-                    <p className="dim mt-0.5 text-xs">
-                      part {b.chunkIndex} of {b.chunkCount}
-                    </p>
-                  )}
-                </li>
-              );
-            })}
+            {todayBlocks.map((b) => (
+              <BlockCard
+                key={b.id}
+                past={b.endMin <= nowMin}
+                block={{
+                  id: b.id,
+                  title: b.title,
+                  domain: b.domain,
+                  startMin: b.startMin,
+                  endMin: b.endMin,
+                  notes: b.notes,
+                  steps: b.steps,
+                  chunkIndex: b.chunkIndex,
+                  chunkCount: b.chunkCount,
+                  completed: b.completed,
+                }}
+              />
+            ))}
           </ul>
         )}
       </section>
+
+      {activeGoals.length > 0 && (
+        <section className="mb-5">
+          <h2 className="mb-2 text-sm font-semibold">Goals this week</h2>
+          <GoalProgress
+            goals={activeGoals.map((g) => {
+              const stat = goalStats.find((x) => x.goalId === g.id);
+              const domain = domainStats.find((d) => d.domain === g.domain);
+              return {
+                id: g.id,
+                domain: g.domain,
+                northStar: g.northStar,
+                weeklyTarget: g.weeklyTarget,
+                done: stat?.done ?? 0,
+                progress: stat?.progress ?? null,
+                streak: domain?.streak ?? 0,
+              };
+            })}
+          />
+        </section>
+      )}
 
       {notFitting.length > 0 && (
         <section className="mb-5">

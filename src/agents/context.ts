@@ -111,8 +111,10 @@ async function commonContext(date: IsoDate): Promise<string> {
 
   if (activeGoals.length > 0) {
     lines.push(`\n## Goals`);
+    lines.push(`Link every task you emit to one of these with goalId. An unlinked task counts toward nothing.`);
     for (const g of activeGoals) {
-      lines.push(`- [${g.domain}] ${g.northStar}${g.currentFocus ? ` — currently: ${g.currentFocus}` : ""}`);
+      const target = g.weeklyTarget ? `, target ${g.weeklyTarget}/week` : "";
+      lines.push(`- goalId ${g.id} [${g.domain}] ${g.northStar}${g.currentFocus ? ` — currently: ${g.currentFocus}` : ""}${target}`);
     }
   }
 

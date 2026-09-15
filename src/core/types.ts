@@ -67,6 +67,17 @@ export interface Task {
   recurrence?: Recurrence;
   /** set when a recurring task has been expanded to one specific date */
   pinnedDate?: IsoDate;
+  /**
+   * At most one of these per day. The emitting agent decides this — two
+   * training sessions in a day is a coaching judgement, not a timing one.
+   */
+  oncePerDay?: boolean;
+  /** groups tasks that share a oncePerDay budget, e.g. all lifting */
+  spacingGroupHint?: string;
+  /** ordered detail shown when the block is expanded */
+  steps?: string[];
+  /** which goal completing this counts toward */
+  goalId?: number;
   sourceAgent: AgentName;
   /** movement tags, checked against athlete restrictions before placement */
   movementTags?: string[];
@@ -97,6 +108,10 @@ export interface Block {
   /** set when a divisible task was split across slots */
   chunkIndex?: number;
   chunkCount?: number;
+  /** detail carried through so the UI can expand a block without a join */
+  notes?: string;
+  steps?: string[];
+  goalId?: number;
 }
 
 export type UnplacedReason =

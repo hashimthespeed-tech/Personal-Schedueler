@@ -20,6 +20,12 @@ export const goals = pgTable("goals", {
   currentFocus: text("current_focus"),
   /** stated target date, if the user set one */
   targetDate: date("target_date"),
+  /**
+   * Sessions per week this goal needs to be on track. Progress is measured
+   * against it, so a goal with no target is measured on consistency alone —
+   * what fraction of what was scheduled actually happened.
+   */
+  weeklyTarget: integer("weekly_target"),
   active: boolean("active").notNull().default(true),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
@@ -90,6 +96,12 @@ export const tasks = pgTable(
     priority: integer("priority").notNull().default(3),
     dayPart: text("day_part"),
     recurrence: text("recurrence").notNull().default("once"),
+    /** at most one of these per day; set by the emitting agent */
+    oncePerDay: boolean("once_per_day").notNull().default(false),
+    spacingGroupHint: text("spacing_group_hint"),
+    /** ordered detail, shown only when the block is expanded */
+    steps: jsonb("steps").$type<string[]>(),
+    goalId: integer("goal_id"),
     spacingHours: integer("spacing_hours"),
     spacingGroup: text("spacing_group"),
     allowedWeekdays: jsonb("allowed_weekdays").$type<number[]>(),
@@ -117,6 +129,9 @@ export const blocks = pgTable(
     sourceAgent: text("source_agent").notNull(),
     chunkIndex: integer("chunk_index"),
     chunkCount: integer("chunk_count"),
+    notes: text("notes"),
+    steps: jsonb("steps").$type<string[]>(),
+    goalId: integer("goal_id"),
     /** set from the nightly check-in */
     completed: boolean("completed"),
     planVersion: integer("plan_version").notNull().default(1),
@@ -135,6 +150,36 @@ export const unplaced = pgTable("unplaced", {
   planVersion: integer("plan_version").notNull().default(1),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
+
+/**
+ * What actually happened, and when.
+ *
+ * Separate from `blocks.completed` because blocks are replaced wholesale on
+ * every replan — the plan is a projection, this is the record. Everything the
+ * stats page reports is derived from here.
+ */
+export const completions = pgTable(
+  "completions",
+  {
+    id: serial("id").primaryKey(),
+    blockId: integer("block_id"),
+    taskId: text("task_id"),
+    title: text("title").notNull(),
+    domain: text("domain").notNull(),
+    goalId: integer("goal_id"),
+    onDate: date("on_date").notNull(),
+    /** where it was scheduled, so lateness can be measured */
+    plannedStartMin: integer("planned_start_min"),
+    plannedEndMin: integer("planned_end_min"),
+    /** when it was actually marked done */
+    completedAt: timestamp("completed_at").notNull().defaultNow(),
+    /** minutes credited, normally the block length */
+    minutes: integer("minutes").notNull().default(0),
+    /** true when marked as skipped rather than done */
+    skipped: boolean("skipped").notNull().default(false),
+  },
+  (t) => [index("completions_date_idx").on(t.onDate, t.domain)],
+);
 
 export const checkIns = pgTable("check_ins", {
   id: serial("id").primaryKey(),

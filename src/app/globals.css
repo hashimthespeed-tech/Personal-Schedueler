@@ -4,12 +4,39 @@
   --color-ink: #0f1115;
   --color-paper: #fbfaf8;
   --color-muted: #6b7280;
+}
 
-  --color-school: #3b6ea5;
-  --color-deen: #2f7d63;
-  --color-ai: #7c5cbf;
-  --color-money: #b8823a;
-  --color-physique: #b5513f;
+/*
+ * Domain palette, generated in OKLCH and checked with a validator rather than
+ * chosen by eye. The first attempt failed twice: the green read as gray, and
+ * money and physique were ΔE 12 apart in normal vision — hard to separate even
+ * with full colour vision, worse under deuteranopia where amber and red share
+ * a hue.
+ *
+ * The fix is the lightness gap between those two. Hue alone cannot separate
+ * them for a deuteranope, so money sits markedly lighter than physique and the
+ * pair stays legible without colour.
+ *
+ * Dark is chosen against the dark surface, not flipped: the dark band is
+ * L 0.48–0.67 against 0.43–0.77 for light, so a lightened light palette does
+ * not fit it.
+ */
+:root {
+  --color-school: #0c72cb;
+  --color-deen: #068e58;
+  --color-ai: #8854bb;
+  --color-money: #a28706;
+  --color-physique: #b02a2a;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-school: #2f82d6;
+    --color-deen: #059f64;
+    --color-ai: #9565c7;
+    --color-money: #ae9203;
+    --color-physique: #b33834;
+  }
 }
 
 :root {

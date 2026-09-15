@@ -4,7 +4,7 @@ import { DateTime } from "luxon";
 import { db } from "@/db/index";
 import {
   agentThreads, assignments, blocks, checkIns, courses, goals, liftLog, metrics,
-  planReviews, prayerLog, settings, tasks, unplaced,
+  planReviews, prayerLog, settings, tasks, unplaced, completions,
 } from "@/db/schema";
 import { getSession } from "@/lib/auth";
 import { today } from "@/agents/context";
@@ -35,6 +35,7 @@ export async function GET() {
   const [
     settingsRow, goalRows, courseRows, assignmentRows, taskRows, blockRows,
     unplacedRows, checkInRows, prayerRows, metricRows, liftRows, reviewRows, threadRows,
+    completionRows,
   ] = await Promise.all([
     db.select().from(settings).limit(1),
     db.select().from(goals).where(eq(goals.active, true)),
@@ -49,6 +50,7 @@ export async function GET() {
     db.select().from(liftLog).where(gte(liftLog.onDate, weekAgo)).orderBy(desc(liftLog.onDate)),
     db.select().from(planReviews).orderBy(desc(planReviews.createdAt)).limit(1),
     db.select().from(agentThreads).orderBy(desc(agentThreads.createdAt)).limit(12),
+    db.select().from(completions).where(gte(completions.onDate, weekAgo)).orderBy(desc(completions.onDate)),
   ]);
 
   const L: string[] = [];
@@ -116,6 +118,9 @@ export async function GET() {
       t.earliestTime != null ? `after ${to12h(t.earliestTime)}` : null,
       t.latestTime != null ? `before ${to12h(t.latestTime)}` : null,
       t.spacingHours ? `${t.spacingHours}h apart (${t.spacingGroup})` : null,
+      t.oncePerDay ? "once/day" : null,
+      t.goalId ? `goal ${t.goalId}` : "NO GOAL",
+      t.steps?.length ? `${t.steps.length} steps` : null,
       t.movementTags?.length ? `moves: ${t.movementTags.join("/")}` : null,
     ].filter(Boolean);
     L.push(`  [${t.domain}] ${t.title}`);
@@ -140,6 +145,12 @@ export async function GET() {
   L.push(`\n## Did not fit (${unplacedRows.length})`);
   if (unplacedRows.length === 0) L.push("  everything fit");
   for (const u of unplacedRows) L.push(`  [${u.domain}] ${u.title}\n      ${u.reason}: ${u.detail}`);
+
+  L.push(`\n## Completions (${completionRows.length} in last 7 days)`);
+  if (completionRows.length === 0) L.push("  none recorded");
+  for (const c of completionRows.slice(0, 30)) {
+    L.push(`  ${c.onDate} ${c.skipped ? "SKIPPED" : "done"} [${c.domain}] ${c.title} (${c.minutes}min, goal ${c.goalId ?? "-"})`);
+  }
 
   L.push(`\n## Check-ins (${checkInRows.length} in last 7 days)`);
   if (checkInRows.length === 0) L.push("  none logged");

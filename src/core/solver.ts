@@ -234,28 +234,21 @@ function orderTasks(tasks: Task[], slots: MutableSlot[]): Task[] {
 }
 
 /**
- * A training session is one per day, whether or not the agent said so.
- *
- * Left to the agent, four separate lifts landed on the same Monday — 6:30am,
- * then 4:25, 5:15, 6:05 and 7:40pm. Every one satisfied its own constraints;
- * nothing said they could not stack. Rather than rely on a prompt remembering
- * to set a spacing group every time, any substantial indivisible physique
- * session gets one by default.
+ * `oncePerDay` is enforced generically: the solver knows nothing about what
+ * kind of work it is, only that two instances of this group must not land on
+ * the same day. Deciding that two lifts in one day is wrong is the Coach's
+ * call, not the scheduler's — the scheduler owns when, never what.
  */
-const SESSION_MIN_DURATION = 30;
-const DEFAULT_SESSION_SPACING_HOURS = 20;
+const ONCE_PER_DAY_HOURS = 20;
 
 function normalizeTask(task: Task): Task {
-  const isSession =
-    task.domain === "physique" &&
-    task.durationMin >= SESSION_MIN_DURATION &&
-    (task.minChunkMin === null || task.minChunkMin === undefined);
-
-  if (!isSession || task.spacing) return task;
-
+  if (!task.oncePerDay || task.spacing) return task;
   return {
     ...task,
-    spacing: { minHoursBetween: DEFAULT_SESSION_SPACING_HOURS, groupKey: "physique-session" },
+    spacing: {
+      minHoursBetween: ONCE_PER_DAY_HOURS,
+      groupKey: task.spacingGroupHint ?? `${task.sourceAgent}:${task.domain}:session`,
+    },
   };
 }
 
@@ -514,6 +507,9 @@ function tryPlace(
     start: c.range.start,
     end: c.range.end,
     sourceAgent: task.sourceAgent,
+    ...(task.notes ? { notes: task.notes } : {}),
+    ...(task.steps ? { steps: task.steps } : {}),
+    ...(task.goalId !== undefined ? { goalId: task.goalId } : {}),
     ...(chunks.length > 1 ? { chunkIndex: i + 1, chunkCount: chunks.length } : {}),
   }));
 
