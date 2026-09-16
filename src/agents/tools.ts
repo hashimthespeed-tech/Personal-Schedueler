@@ -10,8 +10,26 @@ import type Anthropic from "@anthropic-ai/sdk";
 import { z } from "zod";
 import { DOMAINS } from "../db/schema";
 
+/**
+ * Keys arrive however the model felt like writing them — "Lift A", "lift_a",
+ * "liftA". Rejecting those costs a whole turn to a validation error, and with
+ * two turns to work with, one wasted turn is the difference between a week
+ * being planned and nothing happening. So normalize rather than refuse.
+ */
+export function slugify(raw: string): string {
+  const slug = raw
+    .trim()
+    .replace(/([a-z0-9])([A-Z])/g, "$1-$2")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 60)
+    .replace(/-+$/g, "");
+  return slug || "task";
+}
+
 export const emitTaskInput = z.object({
-  key: z.string().min(1).max(60).regex(/^[a-z0-9-]+$/),
+  key: z.string().min(1).max(200).transform(slugify),
   title: z.string().min(1),
   domain: z.enum(DOMAINS),
   durationMin: z.number().int().min(5).max(480),

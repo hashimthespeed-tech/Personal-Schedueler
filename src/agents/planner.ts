@@ -22,7 +22,7 @@
  */
 
 import type Anthropic from "@anthropic-ai/sdk";
-import { and, desc, eq, gte, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, isNull, sql } from "drizzle-orm";
 import { DateTime } from "luxon";
 import { db } from "@/db/index";
 import { completions, needs, planProposals, tasks } from "@/db/schema";
@@ -50,7 +50,7 @@ const DOMAIN_FOR: Record<SpecialistName, "physique" | "school" | "deen" | "ai"> 
   builder: "ai",
 };
 
-const MAX_TURNS = 3;
+const MAX_TURNS = 2;
 
 export interface PlanReport {
   agent: SpecialistName;
@@ -283,25 +283,93 @@ async function scheduleBriefings(): Promise<number> {
 }
 
 /**
- * Ask everyone, place the result, and write it down as a proposal.
+ * Planning runs in three phases, one request each.
  *
- * The proposal is not a gate. It adopts itself when the week starts — a plan
- * that needs permission to exist is one that stops existing the first Sunday he
- * is busy. What approval buys him is a look at it first, and a button to send
- * it back.
+ * It used to be a single call that polled all four specialists in turn. Each
+ * poll is a full Opus conversation with adaptive thinking, so four of them in
+ * one request is a couple of minutes on a good day — comfortably past the 300
+ * second ceiling a serverless function gets, and what that looks like from the
+ * outside is a button that does nothing.
+ *
+ * So the client asks for one agent at a time. Each request is one conversation,
+ * well inside the limit, and it can say whose turn it is while it waits.
  */
-export async function planWeek(date: IsoDate = today()): Promise<WeeklyPlan> {
+
+export interface PlanStart {
+  proposalId: number;
+  weekStart: IsoDate;
+  agents: SpecialistName[];
+}
+
+/** Open a draft for this week, discarding any half-finished one. */
+export async function beginPlan(date: IsoDate = today()): Promise<PlanStart> {
   const weekStart = planStartFor(date);
+
+  await db
+    .update(planProposals)
+    .set({ status: "superseded" })
+    .where(
+      and(
+        eq(planProposals.weekStart, weekStart),
+        inArray(planProposals.status, ["drafting", "proposed"]),
+      ),
+    );
+
+  const created = await db
+    .insert(planProposals)
+    .values({
+      weekStart,
+      status: "drafting",
+      summary: "Asking everyone what the week needs…",
+      reports: {},
+      notFitting: [],
+    })
+    .returning({ id: planProposals.id });
+
+  const id = created[0]?.id;
+  if (!id) throw new Error("Could not start a plan.");
+
+  return { proposalId: id, weekStart, agents: [...SPECIALIST_NAMES] };
+}
+
+/** One specialist's turn. Safe to retry: the task keys make it idempotent. */
+export async function pollAgent(
+  proposalId: number,
+  agent: SpecialistName,
+  date: IsoDate = today(),
+): Promise<PlanReport> {
+  const proposal = (
+    await db.select().from(planProposals).where(eq(planProposals.id, proposalId)).limit(1)
+  )[0];
+  if (!proposal) throw new Error("No such plan.");
+
   const review = await lastWeekReview(date);
 
-  const reports: PlanReport[] = [];
+  let report: PlanReport;
   try {
-    for (const agent of SPECIALIST_NAMES) {
-      reports.push(await poll(agent, weekStart, date, review));
-    }
+    report = await poll(agent, proposal.weekStart, date, review);
   } catch (error) {
     throw new Error(describeApiError(error));
   }
+
+  await db
+    .update(planProposals)
+    .set({ reports: { ...(proposal.reports ?? {}), [agent]: report.note } })
+    .where(eq(planProposals.id, proposalId));
+
+  return report;
+}
+
+/** Turn what everyone said into a week. */
+export async function finishPlan(
+  proposalId: number,
+  reports: PlanReport[],
+  date: IsoDate = today(),
+): Promise<WeeklyPlan> {
+  const proposal = (
+    await db.select().from(planProposals).where(eq(planProposals.id, proposalId)).limit(1)
+  )[0];
+  if (!proposal) throw new Error("No such plan.");
 
   const pending = await scheduleBriefings();
   const solved = await replan(date);
@@ -325,24 +393,12 @@ export async function planWeek(date: IsoDate = today()): Promise<WeeklyPlan> {
 
   await db
     .update(planProposals)
-    .set({ status: "superseded" })
-    .where(and(eq(planProposals.weekStart, weekStart), eq(planProposals.status, "proposed")));
-
-  const created = await db
-    .insert(planProposals)
-    .values({
-      weekStart,
-      status: "proposed",
-      summary,
-      reports: Object.fromEntries(reports.map((r) => [r.agent, r.note])),
-      notFitting,
-      planVersion: solved.planVersion,
-    })
-    .returning({ id: planProposals.id });
+    .set({ status: "proposed", summary, notFitting, planVersion: solved.planVersion })
+    .where(eq(planProposals.id, proposalId));
 
   return {
-    proposalId: created[0]?.id ?? 0,
-    weekStart,
+    proposalId,
+    weekStart: proposal.weekStart,
     summary,
     reports,
     blocks: solved.blocks.length,

@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import { alternate } from "@/agents/gem";
 import { planStartFor } from "@/agents/planner";
 import { titleStem } from "@/agents/task-writer";
+import { slugify } from "@/agents/tools";
 import { gemSeeds, gemKeyForCapture } from "@/data/gems";
 import { ACCEPTED, MAX_FILES, MAX_PDF_BYTES, MAX_TOTAL_BASE64, describeSize, isImage } from "@/lib/attachments";
 import type { CourseLike } from "@/data/capture-targets";
@@ -209,5 +210,30 @@ describe("task identity", () => {
     expect(titleStem("Lift A - full body")).not.toBe(titleStem("Lift B - full body"));
     expect(titleStem("Lift A - full body")).not.toBe(titleStem("Lift A — squat / bench / row"));
     expect(titleStem("APUSH ch. 12")).not.toBe(titleStem("APUSH ch. 13"));
+  });
+});
+
+describe("task keys arrive however the model writes them", () => {
+  it("normalizes the shapes a model actually produces", () => {
+    expect(slugify("Lift A")).toBe("lift-a");
+    expect(slugify("lift_a")).toBe("lift-a");
+    expect(slugify("liftA")).toBe("lift-a");
+    expect(slugify("  Morning Weigh-In  ")).toBe("morning-weigh-in");
+    expect(slugify("APUSH ch. 12")).toBe("apush-ch-12");
+  });
+
+  it("keeps different work under different keys", () => {
+    expect(slugify("Lift A")).not.toBe(slugify("Lift B"));
+  });
+
+  it("never returns an empty key, which would collide with every other one", () => {
+    expect(slugify("!!!")).toBe("task");
+    expect(slugify("   ")).toBe("task");
+  });
+
+  it("does not leave a trailing hyphen after truncating a long key", () => {
+    const long = slugify(`${"word ".repeat(40)}`);
+    expect(long.endsWith("-")).toBe(false);
+    expect(long.length).toBeLessThanOrEqual(60);
   });
 });

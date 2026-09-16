@@ -32,6 +32,19 @@ interface Proposal {
   notFitting: string[] | null;
 }
 
+interface Report {
+  agent: string;
+  note: string;
+  added: number;
+  asked: number;
+}
+
+interface PlanStart {
+  proposalId: number;
+  weekStart: string;
+  agents: string[];
+}
+
 interface Payload {
   weekStart: string;
   proposal: Proposal | null;
@@ -67,6 +80,7 @@ function dayName(iso: string): string {
 export function PlanView() {
   const [data, setData] = useState<Payload | null>(null);
   const [busy, setBusy] = useState(false);
+  const [progress, setProgress] = useState("");
   const [error, setError] = useState("");
 
   const load = useCallback(async () => {
@@ -79,27 +93,96 @@ export function PlanView() {
     void load();
   }, [load]);
 
-  async function post(payload: Record<string, unknown>) {
-    setBusy(true);
-    setError("");
+  /** One request. Returns null and sets an error rather than throwing. */
+  async function post<T>(payload: Record<string, unknown>): Promise<T | null> {
     try {
       const res = await fetch("/api/plan", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(payload),
       });
+
       if (!res.headers.get("content-type")?.includes("application/json")) {
-        setError(res.status === 504 ? "That took too long and timed out." : `Server error (${res.status}).`);
-        return;
+        setError(
+          res.status === 504
+            ? "That request timed out on the server."
+            : `Server error (${res.status}). Nothing was saved for that step.`,
+        );
+        return null;
       }
-      const body = (await res.json()) as { ok: boolean; error?: string };
-      if (!body.ok) setError(body.error ?? "Failed.");
-      await load();
+
+      const body = (await res.json()) as { ok: boolean; error?: string } & T;
+      if (!body.ok) {
+        setError(body.error ?? "Failed.");
+        return null;
+      }
+      return body;
     } catch (e) {
       setError(e instanceof Error ? e.message : "Network error.");
-    } finally {
-      setBusy(false);
+      return null;
     }
+  }
+
+  async function simple(payload: Record<string, unknown>) {
+    setBusy(true);
+    setError("");
+    await post(payload);
+    await load();
+    setBusy(false);
+  }
+
+  /**
+   * Ask each specialist in turn, one request each.
+   *
+   * Sequential on purpose: each answer is written to the pool as it arrives, so
+   * a failure at the tutor still leaves the coach's week in place, and pressing
+   * the button again re-asks without duplicating anything — the task keys make
+   * every poll idempotent.
+   */
+  async function runPlan() {
+    setBusy(true);
+    setError("");
+    setProgress("Starting");
+
+    const begun = await post<PlanStart>({ action: "begin" });
+    if (!begun) {
+      setBusy(false);
+      setProgress("");
+      return;
+    }
+
+    const reports: Report[] = [];
+    for (const agent of begun.agents) {
+      setProgress(`Asking the ${LABEL[agent] ?? agent}`);
+      const answered = await post<{ report: Report }>({
+        action: "poll",
+        proposalId: begun.proposalId,
+        agent,
+      });
+      if (!answered) {
+        // name where it stopped, and say that what came before it survived
+        const done = reports.length;
+        setError(
+          (e) =>
+            `${LABEL[agent] ?? agent}: ${e}` +
+            (done > 0
+              ? ` The ${done === 1 ? "one before it" : `${done} before it`} finished and ${done === 1 ? "its" : "their"} work is saved — press Re-plan to pick it up again.`
+              : ""),
+        );
+        setProgress("");
+        setBusy(false);
+        await load();
+        return;
+      }
+      reports.push(answered.report);
+    }
+
+    setProgress("Fitting it into the week");
+    await post({ action: "finish", proposalId: begun.proposalId, reports });
+
+    setProgress("");
+    await load();
+    setBusy(false);
   }
 
   if (!data) return <p className="dim card p-4 text-sm">Loading…</p>;
@@ -122,18 +205,19 @@ export function PlanView() {
           </div>
           <button
             type="button"
-            onClick={() => post({ action: "plan" })}
+            onClick={runPlan}
             disabled={busy}
             className="shrink-0 rounded-xl px-3.5 py-2 text-sm font-medium disabled:opacity-40"
             style={{ background: "var(--fg)", color: "var(--bg)" }}
           >
-            {busy ? "Asking…" : proposal ? "Re-plan" : "Plan the week"}
+            {busy ? "Working…" : proposal ? "Re-plan" : "Plan the week"}
           </button>
         </div>
 
         {busy && (
           <p className="dim mt-3 text-xs">
-            Asking the coach, tutor, ustadh and builder in turn. A minute or two.
+            {progress || "Working"}… Each one thinks for up to a minute, four in a row. Leave this
+            page open.
           </p>
         )}
 
@@ -141,7 +225,7 @@ export function PlanView() {
           <div className="mt-3 flex gap-2">
             <button
               type="button"
-              onClick={() => post({ action: "decide", id: proposal.id, status: "approved" })}
+              onClick={() => simple({ action: "decide", id: proposal.id, status: "approved" })}
               disabled={busy}
               className="rounded-lg px-3 py-1.5 text-xs font-medium"
               style={{ border: "1px solid var(--line)" }}
@@ -150,7 +234,7 @@ export function PlanView() {
             </button>
             <button
               type="button"
-              onClick={() => post({ action: "decide", id: proposal.id, status: "rejected" })}
+              onClick={() => simple({ action: "decide", id: proposal.id, status: "rejected" })}
               disabled={busy}
               className="dim rounded-lg px-3 py-1.5 text-xs font-medium"
               style={{ border: "1px solid var(--line)" }}
@@ -212,7 +296,7 @@ export function PlanView() {
                   </Link>
                   <button
                     type="button"
-                    onClick={() => post({ action: "resolve", id: need.id })}
+                    onClick={() => simple({ action: "resolve", id: need.id })}
                     disabled={busy}
                     className="dim rounded-lg px-2.5 py-1 text-xs"
                     style={{ border: "1px solid var(--line)" }}
