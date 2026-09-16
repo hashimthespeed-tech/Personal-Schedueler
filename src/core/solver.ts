@@ -424,6 +424,38 @@ function placeTask(
   return { ok: false, reason: lastReason };
 }
 
+/**
+ * Which order to walk the week in.
+ *
+ * Chronological first-fit is right for work with a deadline: do it before it is
+ * due. It is wrong for everything else. Three lifts and four briefings with no
+ * deadline all take the first eligible slot, each placement individually legal
+ * and under the day cap, and the week comes out as a solid Wednesday and an
+ * empty Sunday. One run put all eight blocks on a single day.
+ *
+ * So for work with slack, walk the emptiest day first. The day cap stops a day
+ * being overfilled; this is what stops a day being filled first.
+ */
+function walkOrder(
+  task: Task,
+  slots: MutableSlot[],
+  dayBudgets: Map<string, DayBudget> | null,
+): MutableSlot[] {
+  if (!dayBudgets || task.deadline !== undefined || task.pinnedDate !== undefined) return slots;
+
+  const load = (date: IsoDate): number => {
+    const budget = dayBudgets.get(date);
+    return budget && budget.limit > 0 ? budget.used / budget.limit : 0;
+  };
+
+  return [...slots].sort((a, b) => {
+    const byLoad = load(a.slot.date) - load(b.slot.date);
+    if (Math.abs(byLoad) > 1e-6) return byLoad;
+    if (a.dayIndex !== b.dayIndex) return a.dayIndex - b.dayIndex;
+    return a.slot.start - b.slot.start;
+  });
+}
+
 function tryPlace(
   task: Task,
   slots: MutableSlot[],
@@ -441,7 +473,7 @@ function tryPlace(
   let spacingBlocked = false;
   let dayCapBlocked = false;
 
-  for (const ms of slots) {
+  for (const ms of walkOrder(task, slots, dayBudgets)) {
     if (remaining <= 0) break;
 
     const eligible = slotEligibility(task, ms, relaxEnergy);
@@ -498,6 +530,10 @@ function tryPlace(
   }
 
   for (const c of chunks) consume(c.ms, c.range);
+
+  // the walk may have visited days out of order; a split task still reads
+  // "1 of 3" from the earliest sitting to the latest
+  chunks.sort((a, b) => a.ms.dayIndex - b.ms.dayIndex || a.range.start - b.range.start);
 
   const blocks: Block[] = chunks.map((c, i) => ({
     taskId: task.id,

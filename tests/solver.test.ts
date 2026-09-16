@@ -333,3 +333,59 @@ describe("training program placement", () => {
     }
   });
 });
+
+describe("spreading work across the week", () => {
+  it("does not stack slack work onto the first eligible day", () => {
+    // eight no-deadline tasks: first-fit put all eight on one day, each
+    // placement legal and under the cap, and left the rest of the week empty
+    const eight = Array.from({ length: 8 }, (_, i) =>
+      task({ id: `slack-${i}`, durationMin: 45, dayPart: "evening" }),
+    );
+
+    const r = run(eight);
+    expect(r.unplaced).toHaveLength(0);
+
+    const days = new Set(r.blocks.map((b) => b.date));
+    expect(days.size).toBeGreaterThanOrEqual(5);
+
+    const perDay = new Map<string, number>();
+    for (const b of r.blocks) perDay.set(b.date, (perDay.get(b.date) ?? 0) + 1);
+    expect(Math.max(...perDay.values())).toBeLessThanOrEqual(2);
+  });
+
+  it("still puts deadline work early rather than spreading it", () => {
+    const r = run([
+      task({ id: "due-tue", durationMin: 60, deadline: "2026-09-15" }),
+      task({ id: "due-wed", durationMin: 60, deadline: "2026-09-16" }),
+    ]);
+
+    const tue = r.blocks.find((b) => b.taskId === "due-tue");
+    const wed = r.blocks.find((b) => b.taskId === "due-wed");
+    expect(tue).toBeDefined();
+    expect(wed).toBeDefined();
+    expect(tue!.date <= "2026-09-15").toBe(true);
+    expect(wed!.date <= "2026-09-16").toBe(true);
+  });
+
+  it("keeps a split task's chunks numbered in time order", () => {
+    const r = run([
+      task({ id: "study", durationMin: 180, minChunkMin: 60, deadline: "2026-09-20" }),
+    ]);
+
+    const chunks = r.blocks.filter((b) => b.taskId === "study");
+    expect(chunks.length).toBeGreaterThan(1);
+
+    const ordered = [...chunks].sort((a, b) => (a.chunkIndex ?? 0) - (b.chunkIndex ?? 0));
+    for (let i = 1; i < ordered.length; i++) {
+      const before = ordered[i - 1]!;
+      const after = ordered[i]!;
+      expect(before.date < after.date || (before.date === after.date && before.start < after.start)).toBe(true);
+    }
+  });
+
+  it("leaves a pinned task on its pinned day", () => {
+    const r = run([task({ id: "pinned", durationMin: 45, pinnedDate: "2026-09-17" })]);
+    expect(r.blocks).toHaveLength(1);
+    expect(r.blocks[0]!.date).toBe("2026-09-17");
+  });
+});

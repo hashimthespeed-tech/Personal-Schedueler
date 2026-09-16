@@ -20,6 +20,7 @@ import {
   emitTaskInput, logMetricInput, logMealInput, logWorkoutInput,
 } from "./tools";
 import { buildContext, today } from "./context";
+import { writeTask } from "./task-writer";
 import { replan } from "@/core/replan";
 import { hm, type IsoDate } from "@/core/types";
 import type { SpecialistName } from "./specialists";
@@ -226,45 +227,27 @@ export async function runCapture(
 
           if (call.name === "emit_task") {
             const parsed = emitTaskInput.parse(call.input);
-            const id = `${agent}-cap-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-            await db.insert(tasks).values({
-              id,
-              domain: parsed.domain,
-              title: parsed.title,
-              notes: parsed.notes ?? null,
-              durationMin: parsed.durationMin,
-              minChunkMin: parsed.minChunkMin ?? null,
-              deadline: parsed.deadline ?? null,
-              earliestTime: parsed.earliestTime ? hm(parsed.earliestTime) : null,
-              latestTime: parsed.latestTime ? hm(parsed.latestTime) : null,
-              energy: parsed.energy,
-              priority: parsed.priority,
-              dayPart: parsed.dayPart,
-              recurrence: parsed.recurrence,
-              oncePerDay: parsed.oncePerDay ?? false,
-              steps: parsed.steps ?? null,
-              goalId: parsed.goalId ?? null,
-              allowedWeekdays: parsed.allowedWeekdays ?? null,
-              movementTags: parsed.movementTags ?? null,
-              sourceAgent: agent,
-              sourceRef: `capture:${target.id}`,
-            });
+            const written = await writeTask(parsed, agent, `capture:${target.id}`);
 
-            if (parsed.domain === "school" && parsed.deadline) {
-              await db.insert(assignments).values({
-                courseId: course?.id ?? null,
-                title: parsed.title,
-                kind: "homework",
-                dueDate: parsed.deadline,
-                estimatedMin: parsed.durationMin,
-                notes: parsed.steps?.join("\n") ?? null,
-              });
+            if (written.created && target.kind === "homework" && target.courseCode) {
+              const course = (
+                await db.select().from(courses).where(eq(courses.code, target.courseCode)).limit(1)
+              )[0];
+              if (course) {
+                await db.insert(assignments).values({
+                  courseId: course.id,
+                  title: parsed.title,
+                  kind: "homework",
+                  dueDate: parsed.deadline,
+                  estimatedMin: parsed.durationMin,
+                  notes: parsed.steps?.join("\n") ?? null,
+                });
+              }
             }
 
-            const label = `${parsed.title}${parsed.deadline ? ` (due ${parsed.deadline})` : ""}`;
-            created.push(label);
+            created.push(parsed.title);
             poolChanged = true;
-            out = `Added "${label}".`;
+            out = written.message;
           } else if (call.name === "log_meal") {
             const parsed = logMealInput.parse(call.input);
             await db.insert(metrics).values([

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { downscale, readAsBase64 } from "@/lib/downscale";
+import { Reply } from "./Reply";
 import {
   ACCEPTED,
   MAX_FILES,
@@ -589,22 +590,17 @@ export function HubView() {
                         </ul>
                       )}
 
-                      {m.content && (
-                        <div
-                          className={
-                            m.role === "user"
-                              ? "max-w-[85%] rounded-2xl px-4 py-2.5 text-sm leading-relaxed whitespace-pre-wrap"
-                              : "text-sm leading-7 whitespace-pre-wrap"
-                          }
-                          style={
-                            m.role === "user"
-                              ? { background: "var(--card)", border: "1px solid var(--line)" }
-                              : undefined
-                          }
-                        >
-                          {m.content}
-                        </div>
-                      )}
+                      {m.content &&
+                        (m.role === "user" ? (
+                          <div
+                            className="max-w-[85%] rounded-2xl px-4 py-2.5 text-sm leading-relaxed whitespace-pre-wrap"
+                            style={{ background: "var(--card)", border: "1px solid var(--line)" }}
+                          >
+                            {m.content}
+                          </div>
+                        ) : (
+                          <Reply content={m.content} />
+                        ))}
 
                       {m.actions && m.actions.length > 0 && (
                         <ul className="dim mt-1.5 space-y-0.5 text-xs">

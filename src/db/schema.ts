@@ -7,7 +7,7 @@
  */
 
 import {
-  pgTable, serial, text, integer, real, boolean, timestamp, date, jsonb, index, unique,
+  pgTable, serial, text, integer, real, boolean, timestamp, date, jsonb, index, unique, uniqueIndex,
 } from "drizzle-orm/pg-core";
 
 /** Five life domains. */
@@ -107,12 +107,24 @@ export const tasks = pgTable(
     allowedWeekdays: jsonb("allowed_weekdays").$type<number[]>(),
     movementTags: jsonb("movement_tags").$type<string[]>(),
     sourceAgent: text("source_agent").notNull(),
+    /**
+     * A stable slug the emitting agent chooses, unique within that agent.
+     *
+     * Without it, asking the coach to plan the week twice produced "Lift A —
+     * squat / bench / row" and "Lift A - full body" side by side: the prompt
+     * said not to duplicate, the model saw the pool, and it duplicated anyway
+     * under a different name. Instructions cannot enforce identity; a key can.
+     */
+    taskKey: text("task_key"),
     /** links a task back to what produced it, e.g. an assignment */
     sourceRef: text("source_ref"),
     status: text("status").notNull().default("open"), // open | done | dropped
     createdAt: timestamp("created_at").notNull().defaultNow(),
   },
-  (t) => [index("tasks_status_idx").on(t.status, t.deadline)],
+  (t) => [
+    index("tasks_status_idx").on(t.status, t.deadline),
+    uniqueIndex("tasks_agent_key_idx").on(t.sourceAgent, t.taskKey),
+  ],
 );
 
 /** Scheduler output. Nothing else writes here. */
@@ -300,6 +312,57 @@ export const messages = pgTable(
   },
   (t) => [index("messages_conversation_idx").on(t.conversationId, t.createdAt)],
 );
+
+/**
+ * Something a specialist cannot plan without.
+ *
+ * The tutor has no assignments and no test dates; the ustadh does not know how
+ * much Quran he wants to read. Left alone, each one guesses, and a guessed week
+ * is worse than an empty one. So a specialist declares the gap as data, and the
+ * planner turns it into a real block on the calendar — a few minutes to go and
+ * tell that gem what it needs. The system schedules its own repair.
+ */
+export const needs = pgTable(
+  "needs",
+  {
+    id: serial("id").primaryKey(),
+    agent: text("agent").notNull(),
+    /** the gem to go and answer it in, when there is a specific one */
+    gemKey: text("gem_key"),
+    /** what to ask him, in his words */
+    question: text("question").notNull(),
+    /** why planning is stuck without it */
+    why: text("why").notNull(),
+    /** 1 = nothing sensible can be planned until this is answered */
+    urgency: integer("urgency").notNull().default(3),
+    resolvedAt: timestamp("resolved_at"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => [index("needs_open_idx").on(t.agent, t.resolvedAt)],
+);
+
+/**
+ * A week the planner is proposing.
+ *
+ * Kept separate from `blocks` so a proposal can be looked at before it becomes
+ * the schedule. It adopts itself when the week starts: a plan that needs
+ * permission to exist is a plan that stops existing the first busy Sunday.
+ */
+export const planProposals = pgTable("plan_proposals", {
+  id: serial("id").primaryKey(),
+  weekStart: date("week_start").notNull(),
+  /** proposed | approved | superseded | rejected */
+  status: text("status").notNull().default("proposed"),
+  /** what the planner decided and why, in plain sentences */
+  summary: text("summary").notNull(),
+  /** per-specialist notes, keyed by agent */
+  reports: jsonb("reports").$type<Record<string, string>>(),
+  /** what it could not fit, and why */
+  notFitting: jsonb("not_fitting").$type<string[]>(),
+  planVersion: integer("plan_version"),
+  decidedAt: timestamp("decided_at"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
 
 /**
  * A file attached to a message.

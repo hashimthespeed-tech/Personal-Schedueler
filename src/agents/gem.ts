@@ -13,7 +13,8 @@ import { db } from "@/db/index";
 import { attachments, conversations, gems, messages, metrics, tasks } from "@/db/schema";
 import { isImage } from "@/lib/attachments";
 import { anthropic, AGENT_MODEL, describeApiError } from "./client";
-import { SPECIALIST_TOOLS, emitTaskInput, logMetricInput, closeTaskInput } from "./tools";
+import { SPECIALIST_TOOLS, emitTaskInput, logMetricInput, closeTaskInput, declareNeedInput } from "./tools";
+import { writeNeed, writeTask } from "./task-writer";
 import { SPECIALISTS, isSpecialist, type SpecialistName } from "./specialists";
 import { buildContext, today } from "./context";
 import { replan } from "@/core/replan";
@@ -308,32 +309,15 @@ export async function runGem(
 
           if (call.name === "emit_task") {
             const parsed = emitTaskInput.parse(call.input);
-            const id = `${gem.key}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-            await db.insert(tasks).values({
-              id,
-              domain: parsed.domain,
-              title: parsed.title,
-              notes: parsed.notes ?? null,
-              durationMin: parsed.durationMin,
-              minChunkMin: parsed.minChunkMin ?? null,
-              deadline: parsed.deadline ?? null,
-              earliestTime: parsed.earliestTime ? hm(parsed.earliestTime) : null,
-              latestTime: parsed.latestTime ? hm(parsed.latestTime) : null,
-              energy: parsed.energy,
-              priority: parsed.priority,
-              dayPart: parsed.dayPart,
-              recurrence: parsed.recurrence,
-              oncePerDay: parsed.oncePerDay ?? false,
-              steps: parsed.steps ?? null,
-              goalId: parsed.goalId ?? null,
-              allowedWeekdays: parsed.allowedWeekdays ?? null,
-              movementTags: parsed.movementTags ?? null,
-              sourceAgent: agent,
-              sourceRef: `gem:${gem.key}`,
-            });
+            const written = await writeTask(parsed, agent, `gem:${gem.key}`);
             poolChanged = true;
-            out = `Added "${parsed.title}".`;
+            out = written.message;
             actions.push(out);
+          } else if (call.name === "declare_need") {
+            const parsed = declareNeedInput.parse(call.input);
+            const written = await writeNeed(parsed, agent, gem.key);
+            out = written.message;
+            if (written.created) actions.push(`Will ask you: ${parsed.question}`);
           } else if (call.name === "log_metric") {
             const parsed = logMetricInput.parse(call.input);
             await db.insert(metrics).values({

@@ -11,6 +11,7 @@ import { z } from "zod";
 import { DOMAINS } from "../db/schema";
 
 export const emitTaskInput = z.object({
+  key: z.string().min(1).max(60).regex(/^[a-z0-9-]+$/),
   title: z.string().min(1),
   domain: z.enum(DOMAINS),
   durationMin: z.number().int().min(5).max(480),
@@ -43,6 +44,14 @@ export const logMetricInput = z.object({
 
 export type LogMetricInput = z.infer<typeof logMetricInput>;
 
+export const declareNeedInput = z.object({
+  question: z.string().min(1).max(300),
+  why: z.string().min(1).max(300),
+  urgency: z.number().int().min(1).max(3),
+});
+
+export type DeclareNeedInput = z.infer<typeof declareNeedInput>;
+
 export const closeTaskInput = z.object({
   taskId: z.string().min(1),
   status: z.enum(["done", "dropped"]),
@@ -50,6 +59,36 @@ export const closeTaskInput = z.object({
 });
 
 export type CloseTaskInput = z.infer<typeof closeTaskInput>;
+
+export const DECLARE_NEED: Anthropic.Tool = {
+  name: "declare_need",
+  description:
+    "Say what you do not know that is stopping you planning properly — a test date you " +
+    "were never told, how much Quran he wants to read each day, what the project even is. " +
+    "Do not guess around a gap and do not bury the question in a reply he may not read: " +
+    "declare it, and the planner puts a few minutes on his calendar to come and tell you. " +
+    "Only declare what actually blocks planning; a nice-to-have is noise.",
+  strict: true,
+  input_schema: {
+    type: "object",
+    additionalProperties: false,
+    required: ["question", "why", "urgency"],
+    properties: {
+      question: {
+        type: "string",
+        description: "Ask him directly, in his words. 'What tests do you have in the next two weeks?'",
+      },
+      why: {
+        type: "string",
+        description: "One line on what you cannot plan until he answers.",
+      },
+      urgency: {
+        type: "integer",
+        description: "1 = nothing sensible can be planned without it. 2 = the plan is worse. 3 = would help.",
+      },
+    },
+  },
+};
 
 export const EMIT_TASK: Anthropic.Tool = {
   name: "emit_task",
@@ -65,8 +104,17 @@ export const EMIT_TASK: Anthropic.Tool = {
   input_schema: {
     type: "object",
     additionalProperties: false,
-    required: ["title", "domain", "durationMin", "energy", "priority", "dayPart", "recurrence"],
+    required: ["key", "title", "domain", "durationMin", "energy", "priority", "dayPart", "recurrence", "steps"],
     properties: {
+      key: {
+        type: "string",
+        description:
+          "A short stable slug for this piece of work, lowercase with hyphens — 'lift-a', " +
+          "'morning-weigh-in', 'apush-ch12'. It is the task's identity. Emitting the same key " +
+          "again updates that task instead of adding a second one, so use the SAME key whenever " +
+          "you mean the same work, even if you would word the title differently this time. " +
+          "Getting this wrong is how a plan ends up on the calendar twice under two names.",
+      },
       title: { type: "string", description: "Short and concrete, e.g. 'APUSH ch. 12 reading'." },
       domain: { type: "string", enum: [...DOMAINS] },
       durationMin: { type: "integer", description: "Honest estimate of focused minutes." },
@@ -131,9 +179,10 @@ export const EMIT_TASK: Anthropic.Tool = {
         items: { type: "string" },
         description:
           "The detail, one item per line — exercises with sets and reps, the parts of an " +
-          "assignment, what to cook. Hidden behind a tap, so put the whole thing here rather " +
-          "than cramming it into the title. A block titled 'Lift - Push' with six steps reads " +
-          "far better than a title listing six exercises.",
+          "assignment, what to cook. Required, because a block with no steps is a block he " +
+          "opens and learns nothing from: 'Lift A' on its own does not tell him what to lift. " +
+          "Put the whole session here rather than cramming it into the title. Null only when " +
+          "the title genuinely says everything, like a weigh-in.",
       },
       oncePerDay: {
         type: ["boolean", "null"],
@@ -266,4 +315,4 @@ export const LOG_WORKOUT: Anthropic.Tool = {
   },
 };
 
-export const SPECIALIST_TOOLS: Anthropic.Tool[] = [EMIT_TASK, LOG_METRIC, CLOSE_TASK];
+export const SPECIALIST_TOOLS: Anthropic.Tool[] = [EMIT_TASK, LOG_METRIC, CLOSE_TASK, DECLARE_NEED];
