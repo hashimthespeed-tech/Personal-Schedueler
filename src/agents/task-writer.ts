@@ -12,7 +12,7 @@
 
 import { and, eq } from "drizzle-orm";
 import { db } from "@/db/index";
-import { needs, tasks } from "@/db/schema";
+import { goals, needs, tasks } from "@/db/schema";
 import { hm } from "@/core/types";
 import type { EmitTaskInput, DeclareNeedInput } from "./tools";
 
@@ -40,7 +40,27 @@ export function titleStem(title: string): string {
     .join(" ");
 }
 
-function rowFrom(input: EmitTaskInput, agent: string) {
+/**
+ * The goal a task counts toward, when the agent did not say.
+ *
+ * Every prompt asks for goalId and every model forgets it — the pool was 0 for
+ * 2 linked. That silently empties every progress bar and consistency score on
+ * the stats page, which is most of the reason for logging anything. Domains map
+ * one-to-one onto goals, so this is arithmetic, not judgement, and belongs
+ * here rather than in a prompt.
+ */
+async function goalForDomain(domain: string): Promise<number | null> {
+  const row = (
+    await db
+      .select({ id: goals.id })
+      .from(goals)
+      .where(and(eq(goals.domain, domain), eq(goals.active, true)))
+      .limit(1)
+  )[0];
+  return row?.id ?? null;
+}
+
+function rowFrom(input: EmitTaskInput, agent: string, goalId: number | null) {
   return {
     domain: input.domain,
     title: input.title,
@@ -56,7 +76,7 @@ function rowFrom(input: EmitTaskInput, agent: string) {
     recurrence: input.recurrence,
     oncePerDay: input.oncePerDay ?? false,
     steps: input.steps ?? null,
-    goalId: input.goalId ?? null,
+    goalId: input.goalId ?? goalId,
     allowedWeekdays: input.allowedWeekdays ?? null,
     movementTags: input.movementTags ?? null,
     spacingHours: input.spacingHours ?? null,
@@ -73,7 +93,7 @@ export async function writeTask(
   agent: string,
   sourceRef: string,
 ): Promise<WriteResult> {
-  const row = rowFrom(input, agent);
+  const row = rowFrom(input, agent, await goalForDomain(input.domain));
 
   const byKey = (
     await db

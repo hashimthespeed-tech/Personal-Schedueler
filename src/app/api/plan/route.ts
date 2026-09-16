@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { desc, eq, isNull, not } from "drizzle-orm";
+import { and, desc, eq, gte, isNull, lte, not } from "drizzle-orm";
+import { DateTime } from "luxon";
 import { z } from "zod";
 import { db } from "@/db/index";
 import { blocks, needs, planProposals } from "@/db/schema";
@@ -51,14 +52,35 @@ export async function GET() {
   )[0];
 
   const open = await db.select().from(needs).where(isNull(needs.resolvedAt)).orderBy(needs.urgency);
-  const planned = latest
-    ? await db.select().from(blocks).where(eq(blocks.planVersion, latest.planVersion ?? -1)).orderBy(blocks.onDate, blocks.startMin)
+  /*
+   * The live blocks for the proposed week, not the ones that existed when the
+   * proposal was written.
+   *
+   * Seven code paths call replan() — a gem emitting a task, the reset button,
+   * the nightly cron at 3am — and each one replaces every block under a new
+   * plan version. Matching on the proposal's version meant the week emptied
+   * out overnight, every night, while the schedule itself was perfectly fine.
+   * The proposal describes the week; the blocks are always whatever is current.
+   */
+  const weekEnd = DateTime.fromISO(latest?.weekStart ?? weekStart)
+    .plus({ days: 6 })
+    .toISODate();
+
+  const planned = latest && weekEnd
+    ? await db
+        .select()
+        .from(blocks)
+        .where(and(gte(blocks.onDate, latest.weekStart), lte(blocks.onDate, weekEnd)))
+        .orderBy(blocks.onDate, blocks.startMin)
     : [];
+
+  const stale = latest?.planVersion != null && planned.some((b) => b.planVersion !== latest.planVersion);
 
   return NextResponse.json({
     ok: true,
     weekStart,
     proposal: latest ?? null,
+    stale,
     needs: open.map((n) => ({
       id: n.id,
       agent: n.agent,

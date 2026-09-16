@@ -47,6 +47,7 @@ interface PlanStart {
 
 interface Payload {
   weekStart: string;
+  stale: boolean;
   proposal: Proposal | null;
   needs: Need[];
   blocks: PlannedBlock[];
@@ -242,6 +243,13 @@ export function PlanView() {
               Not this
             </button>
           </div>
+        )}
+
+        {data.stale && (
+          <p className="dim mt-3 text-xs leading-relaxed">
+            The week has been re-solved since this was proposed — something added a task, or the
+            nightly pass ran. What is below is the live schedule.
+          </p>
         )}
 
         {proposal && decided && (

@@ -20,6 +20,7 @@ interface Summary {
   tasks: number;
   blocks: number;
   threads: number;
+  openNeeds: number;
   byDomain: Record<string, number>;
   byAgent: Record<string, number>;
   list: TaskRow[];
@@ -110,6 +111,7 @@ export function ManageView() {
         <p className="mb-1 text-sm font-medium">Right now</p>
         <p className="dim text-xs">
           {data.tasks} tasks · {data.blocks} scheduled blocks · {data.threads} chat messages
+          {data.openNeeds > 0 && ` · ${data.openNeeds} open question${data.openNeeds === 1 ? "" : "s"}`}
         </p>
       </section>
 
@@ -157,7 +159,7 @@ export function ManageView() {
       <section className="card p-4">
         <p className="text-sm font-medium">Start over</p>
         <p className="dim mt-0.5 mb-3 text-xs">
-          Deletes every task, the schedule, and every conversation. Your completion history
+          Deletes every task, the schedule, the weekly plan and every conversation. Your completion history
           and your goals stay.
         </p>
         <div className="flex flex-wrap gap-2">

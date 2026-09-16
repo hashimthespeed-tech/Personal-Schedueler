@@ -1,8 +1,11 @@
 import { NextResponse } from "next/server";
-import { and, eq, inArray, gte } from "drizzle-orm";
+import { and, eq, inArray, gte, isNull } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db/index";
-import { agentThreads, blocks, tasks, unplaced } from "@/db/schema";
+import {
+  agentThreads, attachments, blocks, conversations, gems, messages, needs,
+  planProposals, tasks, unplaced,
+} from "@/db/schema";
 import { getSession } from "@/lib/auth";
 import { replan } from "@/core/replan";
 import { today } from "@/agents/context";
@@ -22,6 +25,40 @@ const body = z.object({
   /** re-solve afterwards so the schedule matches the new task pool */
   replanAfter: z.boolean().default(true),
 });
+
+/**
+ * Wipe hub chats, optionally for one specialist's gems only.
+ *
+ * Attachments go with them — a photograph whose message is gone is a row
+ * nothing can reach, and they are the largest thing in the database.
+ * Gem memory is deliberately kept: it is what the gem learned about him, not
+ * schedule clutter, and losing it to a task reset would be a nasty surprise.
+ */
+async function clearConversations(agent: string | null): Promise<number> {
+  const rows = agent
+    ? await db
+        .select({ id: conversations.id })
+        .from(conversations)
+        .innerJoin(gems, eq(conversations.gemId, gems.id))
+        .where(eq(gems.agent, agent))
+    : await db.select({ id: conversations.id }).from(conversations);
+
+  if (rows.length === 0) return 0;
+  const ids = rows.map((r) => r.id);
+
+  const doomed = await db
+    .select({ id: messages.id })
+    .from(messages)
+    .where(inArray(messages.conversationId, ids));
+
+  if (doomed.length > 0) {
+    await db.delete(attachments).where(inArray(attachments.messageId, doomed.map((m) => m.id)));
+  }
+  await db.delete(messages).where(inArray(messages.conversationId, ids));
+  await db.delete(conversations).where(inArray(conversations.id, ids));
+
+  return doomed.length;
+}
 
 export async function POST(request: Request) {
   const session = await getSession();
@@ -79,13 +116,12 @@ export async function POST(request: Request) {
     }
 
     case "threads": {
-      if (agent) {
-        const n = await db.delete(agentThreads).where(eq(agentThreads.agent, agent)).returning({ id: agentThreads.id });
-        cleared = `Cleared ${n.length} messages from the ${agent} conversation.`;
-      } else {
-        const n = await db.delete(agentThreads).returning({ id: agentThreads.id });
-        cleared = `Cleared ${n.length} messages across every conversation.`;
-      }
+      // the hub writes conversations/messages; agent_threads is the old store
+      const n = await clearConversations(agent ?? null);
+      await db.delete(agentThreads);
+      cleared = agent
+        ? `Cleared ${n} messages from the ${agent} gems. What they remember is kept.`
+        : `Cleared ${n} messages across every gem. What they remember is kept.`;
       break;
     }
 
@@ -93,9 +129,16 @@ export async function POST(request: Request) {
       const n = await db.delete(tasks).returning({ id: tasks.id });
       await db.delete(blocks);
       await db.delete(unplaced);
+      await db.delete(planProposals);
+      // open questions are re-derivable: the agents declare them again on the
+      // next plan, so clearing them is a clean slate rather than lost data
+      await db.delete(needs);
+      const messageCount = await clearConversations(null);
       await db.delete(agentThreads);
       removedTasks = n.length;
-      cleared = `Deleted ${n.length} tasks, the schedule, and every conversation. Your completion history is untouched.`;
+      cleared =
+        `Deleted ${n.length} tasks, the schedule, ${messageCount} messages and the weekly plan. ` +
+        `Your completion history, your goals and what each gem remembers are untouched.`;
       break;
     }
   }
@@ -114,10 +157,12 @@ export async function GET() {
   const session = await getSession();
   if (!session.loggedIn) return NextResponse.json({ ok: false }, { status: 401 });
 
-  const [allTasks, allBlocks, threads] = await Promise.all([
+  const [allTasks, allBlocks, threads, openNeeds] = await Promise.all([
     db.select().from(tasks),
     db.select().from(blocks),
-    db.select().from(agentThreads),
+    // the hub's messages, not agent_threads — that count never moved
+    db.select({ id: messages.id }).from(messages),
+    db.select({ id: needs.id }).from(needs).where(isNull(needs.resolvedAt)),
   ]);
 
   const byDomain: Record<string, number> = {};
@@ -132,6 +177,7 @@ export async function GET() {
     tasks: allTasks.length,
     blocks: allBlocks.length,
     threads: threads.length,
+    openNeeds: openNeeds.length,
     byDomain,
     byAgent,
     list: allTasks.map((t) => ({
