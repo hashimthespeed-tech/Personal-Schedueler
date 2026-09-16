@@ -256,6 +256,10 @@ export function PlanView() {
           This is already on your calendar either way — a plan that needs permission to exist
           stops existing the first busy Sunday. Approving just means you have looked at it.
         </p>
+
+        <Link href="/debug" className="dim mt-2 inline-block text-xs underline underline-offset-2">
+          Show me what you got →
+        </Link>
       </section>
 
       {error && <p className="text-sm text-red-500">{error}</p>}

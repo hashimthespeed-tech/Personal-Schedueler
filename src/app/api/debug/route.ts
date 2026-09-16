@@ -3,8 +3,9 @@ import { desc, eq, gte } from "drizzle-orm";
 import { DateTime } from "luxon";
 import { db } from "@/db/index";
 import {
-  agentThreads, assignments, blocks, checkIns, courses, goals, liftLog, metrics,
-  planReviews, prayerLog, settings, tasks, unplaced, completions,
+  assignments, blocks, checkIns, conversations, courses, gems, goals, liftLog,
+  messages, metrics, needs, planProposals, planReviews, prayerLog, settings,
+  tasks, unplaced, completions,
 } from "@/db/schema";
 import { getSession } from "@/lib/auth";
 import { today } from "@/agents/context";
@@ -35,7 +36,7 @@ export async function GET() {
   const [
     settingsRow, goalRows, courseRows, assignmentRows, taskRows, blockRows,
     unplacedRows, checkInRows, prayerRows, metricRows, liftRows, reviewRows, threadRows,
-    completionRows,
+    completionRows, needRows, proposalRows,
   ] = await Promise.all([
     db.select().from(settings).limit(1),
     db.select().from(goals).where(eq(goals.active, true)),
@@ -49,8 +50,21 @@ export async function GET() {
     db.select().from(metrics).where(gte(metrics.onDate, weekAgo)).orderBy(metrics.onDate),
     db.select().from(liftLog).where(gte(liftLog.onDate, weekAgo)).orderBy(desc(liftLog.onDate)),
     db.select().from(planReviews).orderBy(desc(planReviews.createdAt)).limit(1),
-    db.select().from(agentThreads).orderBy(desc(agentThreads.createdAt)).limit(12),
+    db
+      .select({
+        role: messages.role,
+        content: messages.content,
+        createdAt: messages.createdAt,
+        gem: gems.label,
+      })
+      .from(messages)
+      .innerJoin(conversations, eq(messages.conversationId, conversations.id))
+      .innerJoin(gems, eq(conversations.gemId, gems.id))
+      .orderBy(desc(messages.createdAt))
+      .limit(12),
     db.select().from(completions).where(gte(completions.onDate, weekAgo)).orderBy(desc(completions.onDate)),
+    db.select().from(needs).orderBy(needs.urgency),
+    db.select().from(planProposals).orderBy(desc(planProposals.createdAt)).limit(3),
   ]);
 
   const L: string[] = [];
@@ -126,7 +140,7 @@ export async function GET() {
       t.movementTags?.length ? `moves: ${t.movementTags.join("/")}` : null,
     ].filter(Boolean);
     L.push(`  [${t.domain}] ${t.title}`);
-    L.push(`      ${bits.join(", ")}  <- ${t.sourceAgent}`);
+    L.push(`      ${bits.join(", ")}  <- ${t.sourceAgent}/${t.taskKey ?? "NO KEY"}`);
   }
 
   const capacity = totalMinutes(slotsForHorizon(date, 7));
@@ -171,14 +185,35 @@ export async function GET() {
   L.push(`\n## Prayer log (${prayerRows.length} entries)`);
   if (prayerRows.length === 0) L.push("  none logged");
 
+  L.push(`\n## Open questions nobody could plan around (${needRows.filter((n) => !n.resolvedAt).length})`);
+  const openNeeds = needRows.filter((n) => !n.resolvedAt);
+  if (openNeeds.length === 0) L.push("  none - nothing is blocked on missing information");
+  for (const n of openNeeds) {
+    L.push(`  [${n.agent} -> ${n.gemKey ?? "?"}] urgency ${n.urgency}: ${n.question}`);
+    L.push(`      because: ${n.why}`);
+  }
+  const answered = needRows.filter((n) => n.resolvedAt).length;
+  if (answered > 0) L.push(`  (${answered} already answered)`);
+
+  L.push(`\n## Weekly plans (${proposalRows.length} most recent)`);
+  if (proposalRows.length === 0) L.push("  never run - press Plan the week on /plan");
+  for (const p of proposalRows) {
+    L.push(`  ${p.weekStart} [${p.status}] plan v${p.planVersion ?? "-"}`);
+    L.push(`      ${p.summary}`);
+    for (const [agent, note] of Object.entries(p.reports ?? {})) {
+      L.push(`      ${agent}: ${String(note).replace(/\s+/g, " ").slice(0, 200)}`);
+    }
+  }
+
   L.push("\n## Last nightly review");
   const review = reviewRows[0];
   L.push(review ? `  ${review.onDate}: ${review.summary}` : "  never run");
 
-  L.push(`\n## Recent agent turns (${threadRows.length})`);
+  L.push(`\n## Recent hub turns (${threadRows.length})`);
+  if (threadRows.length === 0) L.push("  none");
   for (const t of [...threadRows].reverse()) {
     const text = t.content.replace(/\s+/g, " ");
-    L.push(`  [${t.agent}/${t.role}] ${text.slice(0, 300)}${text.length > 300 ? "..." : ""}`);
+    L.push(`  [${t.gem}/${t.role}] ${text.slice(0, 300)}${text.length > 300 ? "..." : ""}`);
   }
 
   return new NextResponse(L.join("\n"), {

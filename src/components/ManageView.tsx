@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { domainLabel } from "@/lib/domains";
 
 interface TaskRow {
@@ -94,6 +95,16 @@ export function ManageView() {
           {message}
         </p>
       )}
+
+      <Link href="/debug" className="card flex items-center justify-between gap-3 p-4">
+        <span className="min-w-0">
+          <span className="block text-sm font-medium">Show me what you got →</span>
+          <span className="dim block text-xs">
+            Everything the scheduler knows, with a Copy button. Paste it into a chat when you
+            want help reading the plan.
+          </span>
+        </span>
+      </Link>
 
       <section className="card p-4">
         <p className="mb-1 text-sm font-medium">Right now</p>
