@@ -3,29 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { CaptureCategory, CaptureTarget } from "@/data/capture-targets";
-
-/**
- * Long edge in pixels. A full-resolution phone photo is far larger than the
- * model needs and makes the upload slow on school wifi.
- */
-const MAX_EDGE = 1400;
-const JPEG_QUALITY = 0.82;
-
-async function downscale(file: File): Promise<{ base64: string; mediaType: "image/jpeg" }> {
-  const bitmap = await createImageBitmap(file);
-  const scale = Math.min(1, MAX_EDGE / Math.max(bitmap.width, bitmap.height));
-  const w = Math.round(bitmap.width * scale);
-  const h = Math.round(bitmap.height * scale);
-
-  const canvas = document.createElement("canvas");
-  canvas.width = w;
-  canvas.height = h;
-  const ctx = canvas.getContext("2d");
-  if (!ctx) throw new Error("Could not read that image.");
-  ctx.drawImage(bitmap, 0, 0, w, h);
-
-  return { base64: canvas.toDataURL("image/jpeg", JPEG_QUALITY).split(",")[1] ?? "", mediaType: "image/jpeg" };
-}
+import { downscale } from "@/lib/downscale";
 
 export function CaptureForm() {
   const router = useRouter();

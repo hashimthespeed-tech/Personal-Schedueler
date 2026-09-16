@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import { NavBar } from "@/components/NavBar";
+import { Shell } from "@/components/Shell";
 
 export const metadata: Metadata = {
   title: "Scheduler",
@@ -23,7 +24,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en">
       <body>
-        <main className="mx-auto w-full max-w-lg px-4 pb-28 lg:max-w-4xl">{children}</main>
+        <Shell>{children}</Shell>
         <NavBar />
       </body>
     </html>

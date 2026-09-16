@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { alternate } from "@/agents/gem";
 import { gemSeeds, gemKeyForCapture } from "@/data/gems";
+import { ACCEPTED, MAX_FILES, MAX_PDF_BYTES, MAX_TOTAL_BASE64, describeSize, isImage } from "@/lib/attachments";
 import type { CourseLike } from "@/data/capture-targets";
 
 const COURSES: CourseLike[] = [
@@ -113,5 +114,70 @@ describe("thread alternation", () => {
 
   it("is empty for an empty thread rather than throwing", () => {
     expect(alternate([])).toEqual([]);
+  });
+});
+
+describe("threads that carry files", () => {
+  it("keeps image blocks intact when folding two user turns together", () => {
+    const out = alternate([
+      {
+        role: "user",
+        content: [
+          { type: "image", source: { type: "base64", media_type: "image/jpeg", data: "AAAA" } },
+          { type: "text", text: "what is this asking" },
+        ],
+      },
+      { role: "user", content: "sorry, this one" },
+    ]);
+
+    expect(out).toHaveLength(1);
+    const blocks = out[0]?.content;
+    expect(Array.isArray(blocks)).toBe(true);
+    expect((blocks as unknown[]).length).toBe(3);
+    expect((blocks as { type: string }[])[0]?.type).toBe("image");
+  });
+
+  it("promotes a text turn to blocks rather than dropping the file next to it", () => {
+    const out = alternate([
+      { role: "user", content: "here" },
+      {
+        role: "user",
+        content: [{ type: "document", source: { type: "base64", media_type: "application/pdf", data: "AAAA" } }],
+      },
+    ]);
+
+    const blocks = out[0]?.content as { type: string }[];
+    expect(blocks.map((b) => b.type)).toEqual(["text", "document"]);
+  });
+});
+
+describe("attachment limits", () => {
+  it("takes the formats a phone and a teacher actually produce", () => {
+    for (const type of ["image/jpeg", "image/png", "image/webp", "image/gif", "application/pdf"]) {
+      expect(ACCEPTED.includes(type)).toBe(true);
+    }
+  });
+
+  it("refuses what the model cannot read", () => {
+    for (const type of ["video/mp4", "text/csv", "application/zip", ""]) {
+      expect(ACCEPTED.includes(type)).toBe(false);
+    }
+  });
+
+  it("calls only images images, so a PDF is never sent as an image block", () => {
+    expect(isImage("image/png")).toBe(true);
+    expect(isImage("application/pdf")).toBe(false);
+  });
+
+  it("stays inside the 4.5 MB request body the host allows", () => {
+    // base64 is 4/3 of the bytes, and the JSON around it is not free
+    expect(MAX_TOTAL_BASE64).toBeLessThan(4_500_000);
+    expect(MAX_FILES * MAX_PDF_BYTES * 1.34).toBeGreaterThan(MAX_TOTAL_BASE64);
+  });
+
+  it("describes a size the way a person would say it", () => {
+    expect(describeSize(900)).toBe("900 B");
+    expect(describeSize(2048)).toBe("2 KB");
+    expect(describeSize(3_500_000)).toBe("3.3 MB");
   });
 });

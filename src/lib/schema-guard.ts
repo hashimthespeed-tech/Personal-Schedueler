@@ -28,6 +28,7 @@ const EXPECTED: Record<string, string[]> = {
   gems: ["key", "label", "category", "agent", "memory"],
   conversations: ["gem_id", "title"],
   messages: ["conversation_id", "role", "content"],
+  attachments: ["message_id", "media_type", "data"],
 };
 
 export async function checkSchema(): Promise<SchemaStatus> {

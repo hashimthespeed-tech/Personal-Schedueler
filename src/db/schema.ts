@@ -301,6 +301,30 @@ export const messages = pgTable(
   (t) => [index("messages_conversation_idx").on(t.conversationId, t.createdAt)],
 );
 
+/**
+ * A file attached to a message.
+ *
+ * Its own table rather than a column on `messages` so that rendering a thread
+ * does not drag every photograph in it through memory — the list reads name
+ * and type only, and the bytes are fetched per file, which the browser then
+ * caches.
+ */
+export const attachments = pgTable(
+  "attachments",
+  {
+    id: serial("id").primaryKey(),
+    messageId: integer("message_id").notNull(),
+    name: text("name").notNull(),
+    /** image/jpeg | image/png | image/webp | image/gif | application/pdf */
+    mediaType: text("media_type").notNull(),
+    bytes: integer("bytes").notNull(),
+    /** base64, no data: prefix */
+    data: text("data").notNull(),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => [index("attachments_message_idx").on(t.messageId)],
+);
+
 /** Superseded by conversations + messages; kept so old captures are not lost. */
 export const agentThreads = pgTable("agent_threads", {
   id: serial("id").primaryKey(),

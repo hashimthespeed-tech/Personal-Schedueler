@@ -7,10 +7,11 @@
  */
 
 import type Anthropic from "@anthropic-ai/sdk";
-import { and, asc, eq, notInArray } from "drizzle-orm";
+import { and, asc, eq, inArray, notInArray } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db/index";
-import { conversations, gems, messages, metrics, tasks } from "@/db/schema";
+import { attachments, conversations, gems, messages, metrics, tasks } from "@/db/schema";
+import { isImage } from "@/lib/attachments";
 import { anthropic, AGENT_MODEL, describeApiError } from "./client";
 import { SPECIALIST_TOOLS, emitTaskInput, logMetricInput, closeTaskInput } from "./tools";
 import { SPECIALISTS, isSpecialist, type SpecialistName } from "./specialists";
@@ -61,21 +62,114 @@ function baseAgent(agent: string): SpecialistName {
  * poison every later one in that chat. And taking the last thirty rows can
  * start the window on an assistant turn, which the API rejects outright.
  */
-export function alternate(rows: { role: string; content: string }[]): Anthropic.MessageParam[] {
-  const out: { role: "user" | "assistant"; content: string }[] = [];
+export type Turn = { role: string; content: string | Anthropic.ContentBlockParam[] };
+
+function asBlocks(content: string | Anthropic.ContentBlockParam[]): Anthropic.ContentBlockParam[] {
+  return typeof content === "string" ? [{ type: "text", text: content }] : content;
+}
+
+export function alternate(rows: Turn[]): Anthropic.MessageParam[] {
+  const out: Anthropic.MessageParam[] = [];
 
   for (const row of rows) {
     const role = row.role === "assistant" ? "assistant" : "user";
     const last = out[out.length - 1];
+
     if (last && last.role === role) {
-      last.content = `${last.content}\n\n${row.content}`;
+      last.content =
+        typeof last.content === "string" && typeof row.content === "string"
+          ? `${last.content}\n\n${row.content}`
+          : [...asBlocks(last.content), ...asBlocks(row.content)];
       continue;
     }
+
     out.push({ role, content: row.content });
   }
 
   if (out[0]?.role === "assistant") out.shift();
   return out;
+}
+
+export interface PendingFile {
+  name: string;
+  mediaType: string;
+  /** base64, no data: prefix */
+  data: string;
+}
+
+type StoredFile = { name: string; mediaType: string; data: string | null };
+
+/**
+ * How many files the thread carries in full.
+ *
+ * A worksheet has to stay visible for the whole conversation about it, so
+ * dropping attachments after one turn is not an option. But a year of them is
+ * not affordable either, so the newest few go in whole and the rest become a
+ * line of text saying what was there.
+ */
+const MAX_INLINE_FILES = 8;
+
+/** Files for a window of messages, newest first, budgeted to what fits. */
+async function attachmentsFor(messageIds: number[]): Promise<Map<number, StoredFile[]>> {
+  const byMessage = new Map<number, StoredFile[]>();
+  if (messageIds.length === 0) return byMessage;
+
+  const rows = await db
+    .select()
+    .from(attachments)
+    .where(inArray(attachments.messageId, messageIds))
+    .orderBy(asc(attachments.id));
+
+  // newest first, so the budget is spent on what the conversation is about now
+  let budget = MAX_INLINE_FILES;
+  const keep = new Set<number>();
+  for (const row of [...rows].reverse()) {
+    if (budget <= 0) break;
+    keep.add(row.id);
+    budget -= 1;
+  }
+
+  for (const row of rows) {
+    const list = byMessage.get(row.messageId) ?? [];
+    list.push({
+      name: row.name,
+      mediaType: row.mediaType,
+      data: keep.has(row.id) ? row.data : null,
+    });
+    byMessage.set(row.messageId, list);
+  }
+
+  return byMessage;
+}
+
+/** One stored turn as the content blocks the API wants. */
+function withFiles(text: string, files: StoredFile[] | undefined): string | Anthropic.ContentBlockParam[] {
+  if (!files || files.length === 0) return text;
+
+  const blocks: Anthropic.ContentBlockParam[] = [];
+  for (const file of files) {
+    if (!file.data) {
+      blocks.push({ type: "text", text: `[${file.name} — sent earlier in this chat]` });
+    } else if (isImage(file.mediaType)) {
+      blocks.push({
+        type: "image",
+        source: {
+          type: "base64",
+          media_type: file.mediaType as "image/jpeg" | "image/png" | "image/webp" | "image/gif",
+          data: file.data,
+        },
+      });
+    } else {
+      blocks.push({
+        type: "document",
+        title: file.name,
+        source: { type: "base64", media_type: "application/pdf", data: file.data },
+      });
+    }
+  }
+
+  if (text.trim()) blocks.push({ type: "text", text });
+  return blocks;
 }
 
 /** First user message becomes the conversation title, trimmed to fit a sidebar. */
@@ -87,6 +181,7 @@ function titleFrom(message: string): string {
 export async function runGem(
   conversationId: number,
   userMessage: string,
+  pending: PendingFile[] = [],
   date: IsoDate = today(),
 ): Promise<GemReply> {
   const convo = (
@@ -107,13 +202,55 @@ export async function runGem(
     .where(eq(messages.conversationId, conversationId))
     .orderBy(asc(messages.createdAt));
 
-  const thread = alternate([...history.slice(-30), { role: "user", content: userMessage }]);
+  const window = history.slice(-30);
+  const files = await attachmentsFor(window.map((m) => m.id));
+  const thread = alternate([
+    ...window.map((m) => ({ role: m.role, content: withFiles(m.content, files.get(m.id)) })),
+    {
+      role: "user",
+      content: withFiles(userMessage, pending.map((f) => ({ ...f, data: f.data }))),
+    },
+  ]);
 
-  await db.insert(messages).values({ conversationId, role: "user", content: userMessage });
+  // Cache the conversation so far, not only the system block. A tutoring thread
+  // re-sends its worksheet on every turn, and once there are images in it they
+  // dominate what gets re-read. The breakpoint goes on the last block of the
+  // last message, so the next turn reuses everything up to here.
+  const last = thread[thread.length - 1];
+  if (last) {
+    const blocks = asBlocks(last.content);
+    const tail = blocks[blocks.length - 1];
+    if (tail && tail.type !== "thinking" && tail.type !== "redacted_thinking") {
+      tail.cache_control = { type: "ephemeral" };
+      last.content = blocks;
+    }
+  }
+
+  const saved = await db
+    .insert(messages)
+    .values({ conversationId, role: "user", content: userMessage })
+    .returning({ id: messages.id });
+
+  const messageId = saved[0]?.id;
+  if (messageId && pending.length > 0) {
+    await db.insert(attachments).values(
+      pending.map((file) => ({
+        messageId,
+        name: file.name,
+        mediaType: file.mediaType,
+        bytes: Math.round((file.data.length * 3) / 4),
+        data: file.data,
+      })),
+    );
+  }
+
   if (history.length === 0) {
     await db
       .update(conversations)
-      .set({ title: titleFrom(userMessage), updatedAt: new Date() })
+      .set({
+        title: titleFrom(userMessage || pending[0]?.name || "New chat"),
+        updatedAt: new Date(),
+      })
       .where(eq(conversations.id, conversationId));
   }
 
@@ -327,6 +464,7 @@ export async function recordCapture(
   gemKey: string,
   prompt: string,
   summary: string,
+  photo?: PendingFile,
 ): Promise<void> {
   const gem = (await db.select().from(gems).where(eq(gems.key, gemKey)).limit(1))[0];
   if (!gem) return;
@@ -338,10 +476,23 @@ export async function recordCapture(
     .where(eq(messages.conversationId, conversationId))
     .limit(1);
 
-  await db.insert(messages).values([
-    { conversationId, role: "user", content: prompt },
-    { conversationId, role: "assistant", content: summary },
-  ]);
+  const asked = await db
+    .insert(messages)
+    .values({ conversationId, role: "user", content: prompt })
+    .returning({ id: messages.id });
+
+  const messageId = asked[0]?.id;
+  if (messageId && photo) {
+    await db.insert(attachments).values({
+      messageId,
+      name: photo.name,
+      mediaType: photo.mediaType,
+      bytes: Math.round((photo.data.length * 3) / 4),
+      data: photo.data,
+    });
+  }
+
+  await db.insert(messages).values({ conversationId, role: "assistant", content: summary });
 
   await db
     .update(conversations)

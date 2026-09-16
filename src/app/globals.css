@@ -41,6 +41,8 @@
 
 :root {
   color-scheme: light dark;
+  /* the fixed bottom nav, so a full-height page can subtract it */
+  --nav-h: calc(3.25rem + env(safe-area-inset-bottom, 0px));
   --bg: #fbfaf8;
   --fg: #0f1115;
   --card: #ffffff;

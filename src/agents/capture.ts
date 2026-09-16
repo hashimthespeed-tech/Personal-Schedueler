@@ -332,8 +332,9 @@ export async function runCapture(
     await syncGems(gemSeeds(courseRows));
     await recordCapture(
       gemKeyForCapture(target),
-      `[photo — ${target.label}${note ? `: ${note}` : ""}]`,
+      note || `Photo — ${target.label}`,
       summary,
+      { name: `${target.id}.jpg`, mediaType, data: imageBase64 },
     );
   }
 
