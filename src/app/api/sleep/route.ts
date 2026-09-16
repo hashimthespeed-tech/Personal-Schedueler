@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { db } from "@/db/index";
-import { checkIns, settings } from "@/db/schema";
+import { checkIns, prayerLog, settings } from "@/db/schema";
+import { and, eq } from "drizzle-orm";
 import { getSession } from "@/lib/auth";
 import { netSleepFrom } from "@/core/timeline";
 import { fajrInterruptionFor } from "@/core/sleep";
@@ -28,8 +29,17 @@ export async function POST(request: Request) {
 
   const { onDate, bedtimeMin, wakeMin } = parsed.data;
 
+  // only charge the Fajr wake if he actually marked it
+  const prayed = await db
+    .select()
+    .from(prayerLog)
+    .where(and(eq(prayerLog.onDate, onDate), eq(prayerLog.block, "fajr")))
+    .limit(1);
+  const status = prayed[0]?.status;
+  const prayedFajr = status === "on-time" || status === "late";
+
   const row = (await db.select().from(settings).limit(1))[0];
-  const interruption = row ? fajrInterruptionFor(onDate) : 0;
+  const interruption = row ? fajrInterruptionFor(onDate, prayedFajr) : 0;
   const sleepMin = netSleepFrom(bedtimeMin, wakeMin, interruption);
 
   await db

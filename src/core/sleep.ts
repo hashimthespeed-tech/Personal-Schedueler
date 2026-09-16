@@ -70,14 +70,21 @@ export function bedtimeFor(date: IsoDate, model: SleepModel = DEFAULT_SLEEP): Mi
 /**
  * Minutes of sleep actually lost to Fajr on `date`.
  *
- * Zero when Fajr lands at or after dayStart (the user is up anyway), and zero
- * if they do not return to sleep.
+ * `prayed` is not optional and defaults to false, because charging the
+ * interruption unconditionally turns a measurement into a guess: it assumed a
+ * wake that may never have happened, and then the coach's gate acted on the
+ * result. The cost is only real once Fajr is marked.
+ *
+ * Also zero when Fajr lands at or after dayStart — he is up anyway — and zero
+ * if he does not go back to sleep.
  */
 export function fajrInterruptionFor(
   date: IsoDate,
+  prayed = false,
   model: SleepModel = DEFAULT_SLEEP,
   config: PrayerConfig = LA_MESA,
 ): number {
+  if (!prayed) return 0;
   if (!model.returnToSleep) return 0;
   const { fajr } = rawPrayerTimes(date, config);
   if (fajr >= model.dayStart) return 0;
@@ -104,6 +111,7 @@ export interface SleepNight {
 /** What the night before `date` looks like under the model. */
 export function sleepNightFor(
   date: IsoDate,
+  prayedFajr = false,
   model: SleepModel = DEFAULT_SLEEP,
   config: PrayerConfig = LA_MESA,
 ): SleepNight {
@@ -112,7 +120,7 @@ export function sleepNightFor(
 
   const bedtime = bedtimeFor(prevDate, model);
   const { fajr } = rawPrayerTimes(date, config);
-  const interruptionMin = fajrInterruptionFor(date, model, config);
+  const interruptionMin = fajrInterruptionFor(date, prayedFajr, model, config);
 
   // bedtime is on the previous evening, dayStart the next morning
   const timeInBed = 1440 - bedtime + model.dayStart;

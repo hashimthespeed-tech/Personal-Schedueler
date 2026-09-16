@@ -72,7 +72,9 @@ export async function GET() {
   }
 
   L.push("\n## Sleep");
-  const night = sleepNightFor(date);
+  const fajrRow = prayerRows.find((r) => r.onDate === date && r.block === "fajr");
+  const prayedFajr = fajrRow?.status === "on-time" || fajrRow?.status === "late";
+  const night = sleepNightFor(date, prayedFajr);
   L.push(`  modelled last night  ${(night.netSleepMin / 60).toFixed(1)}h net (${night.vsTargetMin >= 0 ? "+" : ""}${(night.vsTargetMin / 60).toFixed(1)}h vs target)`);
   L.push(`  Fajr                 ${to12h(night.fajr)}, interruption ${night.interruptionMin}min`);
 

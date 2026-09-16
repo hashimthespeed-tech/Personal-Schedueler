@@ -62,6 +62,9 @@ export default async function TodayPage() {
     ),
   };
 
+  const fajrStatus = todayPrayers.find((p) => p.block === "fajr")?.status;
+  const prayedFajr = fajrStatus === "on-time" || fajrStatus === "late";
+
   const review = latestReview[0];
   const checkIn = todayCheckIn[0];
   const scheduled = todayBlocks.length;
@@ -92,7 +95,7 @@ export default async function TodayPage() {
           date={date}
           bedtimeMin={checkIn?.bedtimeMin ?? null}
           wakeMin={checkIn?.wakeMin ?? null}
-          fajrInterruptionMin={fajrInterruptionFor(date)}
+          fajrInterruptionMin={fajrInterruptionFor(date, prayedFajr)}
           targetSleepMin={settingsRow[0]?.targetSleepMin ?? DEFAULT_SLEEP.targetSleepMin}
         />
       </div>

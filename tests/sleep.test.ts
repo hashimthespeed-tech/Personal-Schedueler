@@ -35,12 +35,26 @@ describe("sleep model", () => {
     expect(toHm(bedtimeFor("2026-09-01"))).toBe("23:00");
   });
 
-  // September: Fajr ~05:19, before the 06:00 anchor, so sleep is interrupted.
-  it("charges the Fajr interruption when Fajr is before dayStart", () => {
-    expect(fajrInterruptionFor("2026-09-15")).toBe(20);
-    const night = sleepNightFor("2026-09-15");
-    expect(night.fajrAfterDayStart).toBe(false);
-    expect(night.interruptionMin).toBe(20);
+  // September: Fajr ~05:19, before the 06:00 anchor, so the wake is possible.
+  it("charges the Fajr interruption only when Fajr was actually prayed", () => {
+    expect(fajrInterruptionFor("2026-09-15", true)).toBe(20);
+    const prayed = sleepNightFor("2026-09-15", true);
+    expect(prayed.fajrAfterDayStart).toBe(false);
+    expect(prayed.interruptionMin).toBe(20);
+  });
+
+  // Charging it unconditionally turned a measurement into a guess: it assumed
+  // a wake that may never have happened, and the coach's gate acted on it.
+  it("charges nothing when Fajr was not prayed", () => {
+    expect(fajrInterruptionFor("2026-09-15", false)).toBe(0);
+    expect(fajrInterruptionFor("2026-09-15")).toBe(0);
+    expect(sleepNightFor("2026-09-15", false).interruptionMin).toBe(0);
+  });
+
+  it("gives a longer night when Fajr was missed than when it was prayed", () => {
+    const prayed = sleepNightFor("2026-09-15", true).netSleepMin;
+    const missed = sleepNightFor("2026-09-15", false).netSleepMin;
+    expect(missed - prayed).toBe(20);
   });
 
   // At this latitude Fajr never reaches the 06:00 anchor. It runs from 04:11
@@ -51,16 +65,16 @@ describe("sleep model", () => {
     let latest = -1;
     for (let i = 0; i < 365; i++) {
       const date = addDays("2026-01-01", i);
-      latest = Math.max(latest, sleepNightFor(date).fajr);
+      latest = Math.max(latest, sleepNightFor(date, true).fajr);
     }
     expect(latest).toBeLessThan(DEFAULT_SLEEP.dayStart);
     expect(latest).toBeGreaterThan(hm("05:45"));
   });
 
-  it("charges the interruption on every day of the year", () => {
+  it("can charge the interruption on any day of the year, once prayed", () => {
     for (const date of ["2026-03-08", "2026-06-10", "2026-09-15", "2026-12-28"]) {
-      expect(fajrInterruptionFor(date), date).toBe(20);
-      expect(sleepNightFor(date).fajrAfterDayStart, date).toBe(false);
+      expect(fajrInterruptionFor(date, true), date).toBe(20);
+      expect(sleepNightFor(date, true).fajrAfterDayStart, date).toBe(false);
     }
   });
 
@@ -68,21 +82,21 @@ describe("sleep model", () => {
   // or a later Fajr convention, would hit.
   it("charges nothing when Fajr does land after dayStart", () => {
     const earlyRiser = { ...DEFAULT_SLEEP, dayStart: hm("05:00") };
-    const night = sleepNightFor("2026-09-15", earlyRiser);
+    const night = sleepNightFor("2026-09-15", true, earlyRiser);
     expect(night.fajr).toBeGreaterThanOrEqual(earlyRiser.dayStart);
     expect(night.fajrAfterDayStart).toBe(true);
     expect(night.interruptionMin).toBe(0);
   });
 
   it("reports the user's real current sleep as well under target", () => {
-    // 23:00 -> 06:00 is 7h gross, 6h40m net after Fajr
-    const night = sleepNightFor("2026-09-15");
+    // 23:00 -> 06:00 is 7h gross, 6h40m net once Fajr is actually prayed
+    const night = sleepNightFor("2026-09-15", true);
     expect(night.netSleepMin).toBe(400);
     expect(night.vsTargetMin).toBe(-80);
   });
 
   it("reaches the 8h target once the ramp completes", () => {
-    const night = sleepNightFor(addDays("2026-09-15", 7 * 7));
+    const night = sleepNightFor(addDays("2026-09-15", 7 * 7), true);
     expect(toHm(night.bedtime)).toBe("21:40");
     expect(night.netSleepMin).toBe(DEFAULT_SLEEP.targetSleepMin);
     expect(night.vsTargetMin).toBe(0);

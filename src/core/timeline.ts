@@ -53,8 +53,14 @@ export interface TimelineInput {
   }[];
   sleep?: SleepModel;
   prayer?: PrayerConfig;
-  /** true once the school term has ended or on a weekend */
-  includeSchool?: boolean;
+  /**
+   * Whether to list the class periods.
+   *
+   * Off by default. He knows his own timetable, and seven rows he cannot act
+   * on push the two or three he can off the screen. The solver still treats
+   * every class as immovable — this only changes what is shown.
+   */
+  showClasses?: boolean;
 }
 
 export function buildTimeline(input: TimelineInput): TimelineItem[] {
@@ -88,20 +94,20 @@ export function buildTimeline(input: TimelineInput): TimelineItem[] {
     ref: "wake",
   });
 
-  if (input.includeSchool !== false) {
-    for (const c of fixedCommitmentsFor(input.weekday)) {
-      if (c.kind === "commute" || c.kind === "other") continue;
-      items.push({
-        id: `fixed-${c.id}`,
-        kind: "fixed",
-        label: c.title,
-        start: c.start,
-        end: c.end,
-        // a class happens whether or not you tick it
-        completable: false,
-        ref: c.kind,
-      });
-    }
+  for (const c of fixedCommitmentsFor(input.weekday)) {
+    if (c.kind === "commute" || c.kind === "other") continue;
+    // lunch and the periods are the timetable he already knows
+    if (!input.showClasses && (c.kind === "school" || c.kind === "meal")) continue;
+    items.push({
+      id: `fixed-${c.id}`,
+      kind: "fixed",
+      label: c.title,
+      start: c.start,
+      end: c.end,
+      // it happens whether or not you tick it
+      completable: false,
+      ref: c.kind,
+    });
   }
 
   for (const p of prayers) {

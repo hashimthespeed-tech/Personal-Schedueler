@@ -36,19 +36,33 @@ describe("day timeline", () => {
 
   // A day of identical tickable boxes makes waking up look like an
   // achievement and a lesson look optional.
-  it("marks anchors and classes as not completable, prayer and work as completable", () => {
+  it("marks anchors and fixed things as not completable, prayer and work as completable", () => {
     const items = build([
       { id: 1, title: "Lift", domain: "physique", startMin: hm("18:00"), endMin: hm("18:50"), completed: null, chunkIndex: null, chunkCount: null },
     ]);
     const wake = items.find((i) => i.label === "Wake up");
-    const lesson = items.find((i) => i.label.startsWith("P1 "));
+    const practice = items.find((i) => i.label === "Practice");
     const prayer = items.find((i) => i.label === "Dhuhr + Asr");
     const task = items.find((i) => i.kind === "task");
 
     expect(wake?.kind).toBe("anchor");
-    expect(lesson?.completable).toBe(false);
+    expect(practice?.completable).toBe(false);
     expect(prayer?.completable).toBe(true);
     expect(task?.completable).toBe(true);
+  });
+
+  // Seven rows he cannot act on push the two or three he can off the screen.
+  it("leaves the class timetable out by default", () => {
+    const items = build();
+    expect(items.some((i) => i.label.startsWith("P1 "))).toBe(false);
+    expect(items.some((i) => i.label === "Lunch")).toBe(false);
+    // but practice stays: it is why the evening is short
+    expect(items.some((i) => i.label === "Practice")).toBe(true);
+  });
+
+  it("can still show classes when asked", () => {
+    const items = buildTimeline({ date: TUE, weekday: 2, blocks: [], showClasses: true });
+    expect(items.some((i) => i.label.startsWith("P1 "))).toBe(true);
   });
 
   it("carries all three prayer blocks every day", () => {
@@ -62,8 +76,13 @@ describe("day timeline", () => {
     expect(items.some((i) => i.label.includes("Commute"))).toBe(false);
   });
 
+  it("stays short enough to read on a phone", () => {
+    // Fajr, wake, practice, two prayers, sleep — six rows before any work
+    expect(build().length).toBeLessThanOrEqual(7);
+  });
+
   it("has nothing fixed on a weekend but keeps the anchors and prayers", () => {
-    const sat = buildTimeline({ date: "2026-09-19", weekday: 6, blocks: [] });
+    const sat = buildTimeline({ date: "2026-09-19", weekday: 6, blocks: [], showClasses: true });
     expect(sat.some((i) => i.label.startsWith("P1 "))).toBe(false);
     expect(sat.filter((i) => i.kind === "anchor")).toHaveLength(2);
     expect(sat.filter((i) => i.ref?.match(/fajr|dhuhr-asr|maghrib-isha/))).toHaveLength(3);

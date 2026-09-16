@@ -61,11 +61,21 @@ export function Timeline({
     router.refresh();
   }
 
-  async function togglePrayer(block: string, start: number) {
+  /**
+   * Marking a prayer prayed or missed.
+   *
+   * Missed is its own answer, not the absence of one. Blank means "not yet";
+   * a red cross means it did not happen, and only that is honest enough to
+   * count against him. Tapping the same answer twice clears it.
+   */
+  async function setPrayer(block: string, answer: "done" | "missed", start: number) {
     setBusy(block);
     const current = prayers[block];
-    // tapping an unlogged prayer records it, and how late it is decides on-time
-    const next = current ? null : nowMin - start > 60 ? "late" : "on-time";
+    const wanted =
+      answer === "missed" ? "missed" : nowMin - start > 60 ? "late" : "on-time";
+    const isSame = answer === "missed" ? current === "missed" : current === "on-time" || current === "late";
+    const next = isSame ? null : wanted;
+
     await fetch("/api/prayer", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -94,35 +104,59 @@ export function Timeline({
         if (item.kind === "fixed") {
           const isPrayer = Boolean(item.ref && item.ref.match(/fajr|dhuhr-asr|maghrib-isha/));
           const status = isPrayer ? prayers[item.ref ?? ""] : null;
+          const prayed = status === "on-time" || status === "late";
+          const missed = status === "missed";
 
           return (
             <li key={item.id}>
               <div
                 className="flex items-center gap-3 rounded-xl px-3 py-2.5"
                 style={{
-                  border: "1px dashed var(--line)",
+                  border: missed
+                    ? "1px dashed var(--color-physique)"
+                    : "1px dashed var(--line)",
                   opacity: past && !status ? 0.55 : 1,
                 }}
               >
                 <span className="dim w-20 shrink-0 text-xs tabular-nums">{to12h(item.start)}</span>
                 <span className="flex-1 truncate text-sm">
-                  <span style={status ? { textDecoration: "line-through" } : undefined}>{item.label}</span>
+                  <span style={prayed ? { textDecoration: "line-through" } : undefined}>
+                    {item.label}
+                  </span>
                   {status === "late" && <span className="dim text-xs"> · late</span>}
+                  {missed && <span className="dim text-xs"> · missed</span>}
                 </span>
                 {isPrayer && (
-                  <button
-                    type="button"
-                    disabled={busy === item.ref}
-                    onClick={() => togglePrayer(item.ref ?? "", item.start)}
-                    className="shrink-0 rounded-lg px-2.5 py-1 text-[11px] font-medium disabled:opacity-40"
-                    style={
-                      status
-                        ? { background: "var(--color-deen)", color: "#fff" }
-                        : { border: "1px solid var(--line)" }
-                    }
-                  >
-                    {status ? "Prayed" : "Mark"}
-                  </button>
+                  <span className="flex shrink-0 gap-1.5">
+                    <button
+                      type="button"
+                      disabled={busy === item.ref}
+                      onClick={() => setPrayer(item.ref ?? "", "done", item.start)}
+                      aria-label={`${item.label} prayed`}
+                      className="rounded-lg px-2.5 py-1 text-xs font-semibold disabled:opacity-40"
+                      style={
+                        prayed
+                          ? { background: "var(--color-deen)", color: "#fff" }
+                          : { border: "1px solid var(--line)", color: "var(--dim)" }
+                      }
+                    >
+                      ✓
+                    </button>
+                    <button
+                      type="button"
+                      disabled={busy === item.ref}
+                      onClick={() => setPrayer(item.ref ?? "", "missed", item.start)}
+                      aria-label={`${item.label} missed`}
+                      className="rounded-lg px-2.5 py-1 text-xs font-semibold disabled:opacity-40"
+                      style={
+                        missed
+                          ? { background: "var(--color-physique)", color: "#fff" }
+                          : { border: "1px solid var(--line)", color: "var(--dim)" }
+                      }
+                    >
+                      ✕
+                    </button>
+                  </span>
                 )}
               </div>
             </li>

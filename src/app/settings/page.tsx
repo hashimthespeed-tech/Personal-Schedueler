@@ -12,7 +12,7 @@ export default async function SettingsPage() {
   await requireSession();
 
   const row = (await db.select().from(settings).limit(1))[0];
-  const night = sleepNightFor(today());
+  const night = sleepNightFor(today(), false);
 
   return (
     <div className="pt-6">

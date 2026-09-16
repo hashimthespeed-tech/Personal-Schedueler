@@ -66,10 +66,28 @@ async function loadSettings(): Promise<{ sleep: SleepModel; prayer: PrayerConfig
   };
 }
 
+/**
+ * Whether Fajr was actually marked on `date`.
+ *
+ * The sleep interruption is only charged when it was — an unprayed Fajr costs
+ * nothing, and assuming otherwise turns the sleep figure into a guess the
+ * coach's gate then acts on.
+ */
+async function didPrayFajr(date: IsoDate): Promise<boolean> {
+  const rows = await db
+    .select()
+    .from(prayerLog)
+    .where(and(eq(prayerLog.onDate, date), eq(prayerLog.block, "fajr")))
+    .limit(1);
+  const status = rows[0]?.status;
+  return status === "on-time" || status === "late";
+}
+
 /** Everything every agent sees, regardless of domain. */
 async function commonContext(date: IsoDate): Promise<string> {
   const { sleep, prayer } = await loadSettings();
-  const night = sleepNightFor(date, sleep, prayer);
+  const prayedFajr = await didPrayFajr(date);
+  const night = sleepNightFor(date, prayedFajr, sleep, prayer);
   const bedtime = bedtimeFor(date, sleep);
 
   const activeGoals = await db.select().from(goals).where(eq(goals.active, true));
@@ -166,7 +184,8 @@ async function coachContext(date: IsoDate): Promise<string> {
 
   const sleepHistory: number[] = [];
   for (let i = 1; i <= 7; i++) {
-    sleepHistory.push(sleepNightFor(daysAgo(date, i - 1), sleep, prayer).netSleepMin);
+    const day = daysAgo(date, i - 1);
+    sleepHistory.push(sleepNightFor(day, await didPrayFajr(day), sleep, prayer).netSleepMin);
   }
 
   const gate = evaluateGate({
