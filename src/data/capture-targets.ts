@@ -46,6 +46,7 @@ export interface CourseLike {
   name: string;
   period: number;
   domain: string;
+  teacher?: string | null;
 }
 
 /** Meals named as the training plan names them, so a log lines up with it. */

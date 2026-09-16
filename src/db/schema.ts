@@ -238,6 +238,70 @@ export const liftLog = pgTable(
   (t) => [index("lift_log_ex_idx").on(t.exerciseName, t.onDate)],
 );
 
+/**
+ * A gem: one specialised assistant with its own memory and its own chats.
+ *
+ * The four specialists were too coarse. "Tutor" holding one conversation
+ * across five AP courses means every question arrives with four subjects of
+ * irrelevant history attached, and none of it accumulates into knowing how he
+ * does calculus specifically. A gem per subject fixes both.
+ *
+ * Each gem still stands on a base specialist for its character and its tools;
+ * `instructions` narrows it and `memory` is what it has learned to keep.
+ */
+export const gems = pgTable("gems", {
+  id: serial("id").primaryKey(),
+  key: text("key").notNull().unique(),
+  label: text("label").notNull(),
+  blurb: text("blurb"),
+  /** grouping in the sidebar */
+  category: text("category").notNull(),
+  domain: text("domain").notNull(),
+  /** which specialist supplies the base prompt and tools */
+  agent: text("agent").notNull(),
+  /** set when this gem is one specific class */
+  courseCode: text("course_code"),
+  /** appended to the base prompt */
+  instructions: text("instructions"),
+  /**
+   * What this gem should carry between conversations. Written by the gem
+   * itself through the remember tool, so a new chat does not start from
+   * nothing.
+   */
+  memory: text("memory"),
+  sortOrder: integer("sort_order").notNull().default(0),
+  active: boolean("active").notNull().default(true),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const conversations = pgTable(
+  "conversations",
+  {
+    id: serial("id").primaryKey(),
+    gemId: integer("gem_id").notNull(),
+    title: text("title").notNull().default("New chat"),
+    archived: boolean("archived").notNull().default(false),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => [index("conversations_gem_idx").on(t.gemId, t.updatedAt)],
+);
+
+export const messages = pgTable(
+  "messages",
+  {
+    id: serial("id").primaryKey(),
+    conversationId: integer("conversation_id").notNull(),
+    role: text("role").notNull(),
+    content: text("content").notNull(),
+    /** what the turn changed, shown under the reply */
+    actions: jsonb("actions").$type<string[]>(),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => [index("messages_conversation_idx").on(t.conversationId, t.createdAt)],
+);
+
+/** Superseded by conversations + messages; kept so old captures are not lost. */
 export const agentThreads = pgTable("agent_threads", {
   id: serial("id").primaryKey(),
   agent: text("agent").notNull(), // coach | tutor | ustadh | builder

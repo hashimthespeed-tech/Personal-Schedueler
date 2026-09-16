@@ -13,7 +13,7 @@
 import type Anthropic from "@anthropic-ai/sdk";
 import { eq } from "drizzle-orm";
 import { db } from "@/db/index";
-import { agentThreads, assignments, courses, goals, liftLog, metrics, tasks } from "@/db/schema";
+import { assignments, courses, goals, liftLog, metrics, tasks } from "@/db/schema";
 import { anthropic, AGENT_MODEL, describeApiError } from "./client";
 import {
   EMIT_TASK, LOG_METRIC, LOG_MEAL, LOG_WORKOUT,
@@ -24,6 +24,8 @@ import { replan } from "@/core/replan";
 import { hm, type IsoDate } from "@/core/types";
 import type { SpecialistName } from "./specialists";
 import type { CaptureKind, CaptureTarget } from "@/data/capture-targets";
+import { gemKeyForCapture, gemSeeds } from "@/data/gems";
+import { recordCapture, syncGems } from "./gem";
 
 const MAX_TURNS = 3;
 
@@ -324,12 +326,15 @@ export async function runCapture(
     throw new Error(describeApiError(error));
   }
 
-  // leave a trace so the desktop hub has the context of what the phone did
+  // leave the trace in the gem's own thread, so the hub opens already knowing
   if (summary) {
-    await db.insert(agentThreads).values([
-      { agent, role: "user", content: `[photo — ${target.label}${note ? `: ${note}` : ""}]` },
-      { agent, role: "assistant", content: summary },
-    ]);
+    const courseRows = await db.select().from(courses).orderBy(courses.period);
+    await syncGems(gemSeeds(courseRows));
+    await recordCapture(
+      gemKeyForCapture(target),
+      `[photo — ${target.label}${note ? `: ${note}` : ""}]`,
+      summary,
+    );
   }
 
   if (poolChanged) await replan(date);

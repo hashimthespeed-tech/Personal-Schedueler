@@ -25,6 +25,9 @@ const EXPECTED: Record<string, string[]> = {
   goals: ["weekly_target"],
   check_ins: ["wake_min", "bedtime_min"],
   completions: ["block_id", "skipped", "minutes"],
+  gems: ["key", "label", "category", "agent", "memory"],
+  conversations: ["gem_id", "title"],
+  messages: ["conversation_id", "role", "content"],
 };
 
 export async function checkSchema(): Promise<SchemaStatus> {
