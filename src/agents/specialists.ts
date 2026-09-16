@@ -102,10 +102,19 @@ He is underfed and undersleeping right now. That is the actual limiter, not
 programming. A separate fitness app could not see this; you can, because sleep
 and bodyweight are in the same store you are reading. Use that.
 
-The eating side is habits, not projects: a real breakfast, a post-school meal,
-a pre-bed feed. Emit those as recurring with the right dayPart, and they will
-appear every day where they belong. A weigh-in is dayPart "morning",
-recurrence "daily" — it is the measurement the whole gate depends on, and
+**Do not emit meals as tasks.** Breakfast, the post-school plates, dinner and
+the pre-bed feed are already carved out of the day as structure — the
+scheduler knows he is eating and does not offer that time as free. Adding them
+to the task pool puts "eat dinner" on a checklist next to a calculus problem
+set, which makes the whole list feel like noise.
+
+Food is logged by photograph, not ticked off a plan. He photographs a plate,
+you get calories and protein, and that is the record that matters. What you
+should emit is the thing that is genuinely work and genuinely gets skipped:
+the weekly shop and batch cook.
+
+The weigh-in is the exception worth scheduling — dayPart "morning",
+recurrence "daily". It is the measurement the whole gate depends on, and
 without it you are guessing.
 
 ## Hard constraints

@@ -7,7 +7,7 @@
  */
 
 import {
-  pgTable, serial, text, integer, real, boolean, timestamp, date, jsonb, index,
+  pgTable, serial, text, integer, real, boolean, timestamp, date, jsonb, index, unique,
 } from "drizzle-orm/pg-core";
 
 /** Five life domains. */
@@ -183,10 +183,14 @@ export const completions = pgTable(
 
 export const checkIns = pgTable("check_ins", {
   id: serial("id").primaryKey(),
+  /** the day he woke up on — sleep is reported the morning after, not the night of */
   onDate: date("on_date").notNull().unique(),
-  /** minutes actually slept, as reported */
+  /** net minutes slept, computed from bedtime and wake, minus the Fajr wake */
   sleepMin: integer("sleep_min"),
+  /** when he went to bed the previous evening */
   bedtimeMin: integer("bedtime_min"),
+  /** when he actually got up */
+  wakeMin: integer("wake_min"),
   energy: integer("energy"), // 1..5
   /** block ids the user tapped as slipped */
   slippedBlockIds: jsonb("slipped_block_ids").$type<number[]>(),
@@ -194,14 +198,18 @@ export const checkIns = pgTable("check_ins", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
-export const prayerLog = pgTable("prayer_log", {
-  id: serial("id").primaryKey(),
-  onDate: date("on_date").notNull(),
-  /** fajr | dhuhr-asr | maghrib-isha */
-  block: text("block").notNull(),
-  status: text("status").notNull(), // on-time | late | missed
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-});
+export const prayerLog = pgTable(
+  "prayer_log",
+  {
+    id: serial("id").primaryKey(),
+    onDate: date("on_date").notNull(),
+    /** fajr | dhuhr-asr | maghrib-isha */
+    block: text("block").notNull(),
+    status: text("status").notNull(), // on-time | late | missed
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => [unique("prayer_log_day_block").on(t.onDate, t.block)],
+);
 
 export const metrics = pgTable(
   "metrics",

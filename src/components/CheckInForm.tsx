@@ -24,7 +24,6 @@ export function CheckInForm({
   alreadyDone: boolean;
 }) {
   const router = useRouter();
-  const [sleepHours, setSleepHours] = useState(7);
   const [energy, setEnergy] = useState(3);
   const [slipped, setSlipped] = useState<number[]>([]);
   const [note, setNote] = useState("");
@@ -42,7 +41,6 @@ export function CheckInForm({
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
         date,
-        sleepMin: Math.round(sleepHours * 60),
         energy,
         slippedBlockIds: slipped,
         note: note.trim() || null,
@@ -76,24 +74,6 @@ export function CheckInForm({
 
   return (
     <div className="space-y-4">
-      <section className="card p-4">
-        <div className="flex items-baseline justify-between">
-          <label htmlFor="sleep" className="text-sm font-medium">Sleep</label>
-          <span className="text-sm font-semibold tabular-nums">{sleepHours.toFixed(1)}h</span>
-        </div>
-        <input
-          id="sleep"
-          type="range"
-          min={3}
-          max={11}
-          step={0.5}
-          value={sleepHours}
-          onChange={(e) => setSleepHours(Number(e.target.value))}
-          className="mt-3 w-full"
-        />
-        <p className="dim mt-1 text-xs">Not counting the Fajr wake.</p>
-      </section>
-
       <section className="card p-4">
         <p className="mb-3 text-sm font-medium">Energy</p>
         <div className="flex gap-2">

@@ -7,7 +7,6 @@ import { getSession } from "@/lib/auth";
 
 const body = z.object({
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-  sleepMin: z.number().int().min(0).max(960),
   energy: z.number().int().min(1).max(5),
   slippedBlockIds: z.array(z.number().int()),
   note: z.string().nullable(),
@@ -27,15 +26,15 @@ export async function POST(request: Request) {
     .insert(checkIns)
     .values({
       onDate: input.date,
-      sleepMin: input.sleepMin,
       energy: input.energy,
       slippedBlockIds: input.slippedBlockIds,
       note: input.note,
     })
+    // sleep is written by the morning report on the same row; leaving those
+    // columns out of the update keeps the night's numbers intact
     .onConflictDoUpdate({
       target: checkIns.onDate,
       set: {
-        sleepMin: input.sleepMin,
         energy: input.energy,
         slippedBlockIds: input.slippedBlockIds,
         note: input.note,
