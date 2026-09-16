@@ -10,11 +10,18 @@ import { fajrInterruptionFor, DEFAULT_SLEEP } from "@/core/sleep";
 import { InstallHint } from "@/components/InstallHint";
 import { Timeline } from "@/components/Timeline";
 import { SleepCard } from "@/components/SleepCard";
+import { checkSchema } from "@/lib/schema-guard";
+import { SetupNeeded } from "@/components/SetupNeeded";
 
 export const dynamic = "force-dynamic";
 
 export default async function TodayPage() {
   await requireSession();
+
+  // A deploy without db:push makes every query fail, and production strips the
+  // message — so without this the whole app is a blank "server error".
+  const schema = await checkSchema();
+  if (!schema.ok) return <SetupNeeded status={schema} />;
 
   const date = today();
   const weekday = weekdayOf(date);
