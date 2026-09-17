@@ -4,7 +4,7 @@ import { routineLog } from "@/db/schema";
 import { requireSession } from "@/lib/auth";
 import { checkSchema } from "@/lib/schema-guard";
 import { SetupNeeded } from "@/components/SetupNeeded";
-import { Grid, IntensityChart, SlotTable } from "@/components/Consistency";
+import { CaloriesChart, Grid, IntensityChart, SlotTable } from "@/components/Consistency";
 import { consistency, windowEnding } from "@/core/consistency";
 import { today } from "@/core/clock";
 
@@ -27,14 +27,15 @@ const RANGES = [
 export default async function StatsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ days?: string }>;
+  searchParams: Promise<{ days?: string; tab?: string }>;
 }) {
   await requireSession();
 
   const schema = await checkSchema();
   if (!schema.ok) return <div className="pt-6"><SetupNeeded status={schema} /></div>;
 
-  const { days: asked } = await searchParams;
+  const { days: asked, tab: askedTab } = await searchParams;
+  const tab = askedTab === "numbers" ? "numbers" : "graphs";
   const range = RANGES.find((r) => String(r.days) === asked) ?? RANGES[1];
 
   const date = today();
@@ -49,6 +50,7 @@ export default async function StatsPage({
       slotKey: r.slotKey,
       status: r.status as "done" | "missed",
       intensity: r.intensity,
+      calories: r.calories,
     })),
   );
 
@@ -61,22 +63,24 @@ export default async function StatsPage({
         <p className="dim text-sm">Same slots every day, so these numbers compare.</p>
       </header>
 
-      <nav className="flex gap-1.5">
-        {RANGES.map((r) => (
-          <a
-            key={r.days}
-            href={`/stats?days=${r.days}`}
-            className="rounded-full px-3.5 py-1.5 text-xs font-medium"
-            style={
-              r.days === range.days
-                ? { background: "var(--fg)", color: "var(--bg)" }
-                : { border: "1px solid var(--line)", color: "var(--dim)" }
-            }
-          >
-            {r.label}
-          </a>
-        ))}
-      </nav>
+      <div className="space-y-3">
+        <nav className="flex gap-1.5">
+          {RANGES.map((r) => (
+            <a
+              key={r.days}
+              href={`/stats?days=${r.days}&tab=${tab}`}
+              className="rounded-full px-3.5 py-1.5 text-xs font-medium"
+              style={r.days === range.days ? { background: "var(--fg)", color: "var(--bg)" } : { border: "1px solid var(--line)", color: "var(--dim)" }}
+            >
+              {r.label}
+            </a>
+          ))}
+        </nav>
+        <nav className="flex gap-1.5" aria-label="Stats view">
+          <a href={`/stats?days=${range.days}&tab=graphs`} className="rounded-full px-3.5 py-1.5 text-xs font-medium" style={tab === "graphs" ? { background: "var(--fg)", color: "var(--bg)" } : { border: "1px solid var(--line)", color: "var(--dim)" }}>Graphs</a>
+          <a href={`/stats?days=${range.days}&tab=numbers`} className="rounded-full px-3.5 py-1.5 text-xs font-medium" style={tab === "numbers" ? { background: "var(--fg)", color: "var(--bg)" } : { border: "1px solid var(--line)", color: "var(--dim)" }}>Numbers</a>
+        </nav>
+      </div>
 
       {empty ? (
         <p className="dim card p-4 text-sm">
@@ -85,34 +89,23 @@ export default async function StatsPage({
         </p>
       ) : (
         <>
-          <section className="card grid grid-cols-2 gap-5 p-4 sm:grid-cols-4">
-            <Tile label="Core hours" value={`${Math.round(score.core * 100)}%`} />
-            <Tile label="Streak" value={String(score.currentStreak)} sub={`best ${score.bestStreak}`} />
-            <Tile label="Days" value={String(score.days)} sub="since you started" />
-            <Tile
-              label="Intensity"
-              value={score.avgIntensity === null ? "—" : score.avgIntensity.toFixed(1)}
-              sub={score.avgIntensity === null ? "not rated yet" : "out of 10"}
-            />
-          </section>
-
-          <section className="card p-4">
-            <h2 className="mb-3 text-sm font-semibold">Everything, day by day</h2>
-            <Grid score={score} />
-          </section>
-
-          <section className="card p-4">
-            <h2 className="mb-3 text-sm font-semibold">How hard you went</h2>
-            <IntensityChart score={score} />
-          </section>
-
-          <section className="card p-4">
-            <h2 className="mb-1 text-sm font-semibold">The numbers</h2>
-            <p className="dim mb-3 text-xs">
-              Skipped means you never answered — different from missing it, and not counted as one.
-            </p>
-            <SlotTable slots={score.slots} />
-          </section>
+          {tab === "graphs" ? (
+            <>
+              <section className="card p-4"><h2 className="mb-3 text-sm font-semibold">Everything, day by day</h2><Grid score={score} /></section>
+              <section className="card p-4"><h2 className="mb-3 text-sm font-semibold">How hard you went</h2><IntensityChart score={score} /></section>
+              <section className="card p-4"><h2 className="mb-3 text-sm font-semibold">Calories eaten</h2><CaloriesChart score={score} /></section>
+            </>
+          ) : (
+            <>
+              <section className="card grid grid-cols-2 gap-5 p-4 sm:grid-cols-4">
+                <Tile label="Core hours" value={`${Math.round(score.core * 100)}%`} />
+                <Tile label="Streak" value={String(score.currentStreak)} sub={`best ${score.bestStreak}`} />
+                <Tile label="Days" value={String(score.days)} sub="since you started" />
+                <Tile label="Intensity" value={score.avgIntensity === null ? "—" : score.avgIntensity.toFixed(1)} sub={score.avgIntensity === null ? "not rated yet" : "out of 10"} />
+              </section>
+              <section className="card p-4"><h2 className="mb-1 text-sm font-semibold">The numbers</h2><p className="dim mb-3 text-xs">Skipped means you never answered — different from missing it, and not counted as one.</p><SlotTable slots={score.slots} /></section>
+            </>
+          )}
         </>
       )}
     </div>
