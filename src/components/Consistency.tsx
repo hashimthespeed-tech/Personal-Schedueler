@@ -325,6 +325,59 @@ export function IntensityChart({ score }: { score: Score }) {
 
 /* ------------------------------------------------------------------ */
 
+export function CaloriesChart({ score }: { score: Score }) {
+  const points = score.dailyCalories
+    .map((point, i) => ({ ...point, i }))
+    .filter((point): point is { date: string; calories: number; i: number } => point.calories !== null);
+  if (points.length === 0) return <p className="dim text-xs">Finish logging a day’s meals to see calories here.</p>;
+
+  const max = Math.max(...points.map((point) => point.calories), 1);
+  const plotW = CHART_W - PAD.left - PAD.right;
+  const plotH = CHART_H - PAD.top - PAD.bottom;
+  const step = score.dates.length > 1 ? plotW / (score.dates.length - 1) : 0;
+  const x = (i: number) => PAD.left + i * step;
+  const y = (value: number) => PAD.top + plotH - (value / max) * plotH;
+  const segments: typeof points[] = [];
+  let run: typeof points = [];
+  for (const point of points) {
+    const previous = run[run.length - 1];
+    if (previous && point.i - previous.i > 1) {
+      segments.push(run);
+      run = [];
+    }
+    run.push(point);
+  }
+  if (run.length) segments.push(run);
+
+  return (
+    <figure className="m-0">
+      <div className="overflow-x-auto">
+        <svg viewBox={`0 0 ${CHART_W} ${CHART_H}`} role="img" aria-label="Daily calories eaten; gaps mean an incomplete meal log." style={{ display: "block", width: "100%", minWidth: "320px", height: "auto" }}>
+          {[0, Math.round(max / 2), max].map((value) => (
+            <g key={value}>
+              <line x1={PAD.left} y1={y(value)} x2={CHART_W - PAD.right} y2={y(value)} stroke="var(--line)" strokeWidth="1" />
+              <text x={PAD.left - 6} y={y(value) + 3} textAnchor="end" style={{ fontSize: "9px", fill: "var(--dim)" }}>{value}</text>
+            </g>
+          ))}
+          {segments.map((segment, index) => (
+            <polyline key={index} fill="none" stroke="var(--color-physique)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" points={segment.map((point) => `${x(point.i)},${y(point.calories)}`).join(" ")} />
+          ))}
+          {points.map((point) => (
+            <circle key={point.date} cx={x(point.i)} cy={y(point.calories)} r="3.5" fill="var(--color-physique)" stroke="var(--card)" strokeWidth="2">
+              <title>{`${point.date}: ${point.calories} calories`}</title>
+            </circle>
+          ))}
+          <text x={PAD.left} y={CHART_H - 5} style={{ fontSize: "9px", fill: "var(--dim)" }}>{score.from}</text>
+          <text x={CHART_W - PAD.right} y={CHART_H - 5} textAnchor="end" style={{ fontSize: "9px", fill: "var(--dim)" }}>{score.to}</text>
+        </svg>
+      </div>
+      <figcaption className="dim mt-2 text-xs leading-relaxed">Total calories eaten each day. A gap means a meal still needs calories or has not been marked.</figcaption>
+    </figure>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+
 export function SlotTable({ slots }: { slots: SlotScore[] }) {
   return (
     <div className="overflow-x-auto">
