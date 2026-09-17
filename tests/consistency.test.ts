@@ -216,3 +216,34 @@ describe("windowEnding", () => {
     expect(score.days).toBe(30);
   });
 });
+
+
+describe("daily calories", () => {
+  const meals: LogRow[] = [
+    { onDate: MON, slotKey: "breakfast", status: "done", calories: 600 },
+    { onDate: MON, slotKey: "post-school-meal", status: "done", calories: 800 },
+    { onDate: MON, slotKey: "dinner", status: "done", calories: 700 },
+    { onDate: MON, slotKey: "wind-down", status: "done", calories: 250 },
+  ];
+
+  it("totals calories only when every meal is answered and eaten meals have values", () => {
+    const score = consistency(MON, MON, meals);
+    expect(score.dailyCalories).toEqual([{ date: MON, calories: 2350 }]);
+  });
+
+  it("leaves a hole when an eaten meal has no calories yet", () => {
+    const incomplete = meals.map((row) => row.slotKey === "dinner" ? { ...row, calories: null } : row);
+    const score = consistency(MON, MON, incomplete);
+    expect(score.dailyCalories).toEqual([{ date: MON, calories: null }]);
+  });
+
+  it("leaves a hole when a meal was never marked", () => {
+    const score = consistency(MON, MON, meals.slice(0, -1));
+    expect(score.dailyCalories).toEqual([{ date: MON, calories: null }]);
+  });
+
+  it("counts an explicitly missed meal as zero", () => {
+    const score = consistency(MON, MON, [...meals.slice(0, -1), { onDate: MON, slotKey: "wind-down", status: "missed" }]);
+    expect(score.dailyCalories).toEqual([{ date: MON, calories: 2100 }]);
+  });
+});
