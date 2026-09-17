@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { to12h } from "@/core/types";
-import type { Day, Slot } from "@/core/routine";
+import { isMealSlot, type Day, type Slot } from "@/core/routine";
 
 interface SlotScore {
   key: string;
@@ -16,6 +16,7 @@ interface SlotScore {
 interface Mark {
   status: "done" | "missed";
   intensity: number | null;
+  calories: number | null;
 }
 
 interface Payload {
@@ -96,6 +97,7 @@ export function DayView({ initialDate }: { initialDate: string }) {
     slotKey: string,
     status: "done" | "missed" | null,
     intensity?: number | null,
+    calories?: number | null,
   ) {
     if (!data) return;
     setBusy(slotKey);
@@ -110,6 +112,7 @@ export function DayView({ initialDate }: { initialDate: string }) {
         marks[slotKey] = {
           status,
           intensity: intensity !== undefined ? intensity : (marks[slotKey]?.intensity ?? null),
+          calories: calories !== undefined ? calories : (marks[slotKey]?.calories ?? null),
         };
       }
       return { ...d, marks };
@@ -125,6 +128,7 @@ export function DayView({ initialDate }: { initialDate: string }) {
           slotKey,
           status,
           ...(intensity !== undefined ? { intensity } : {}),
+          ...(calories !== undefined ? { calories } : {}),
         }),
       });
       if (!res.ok) {
@@ -235,7 +239,7 @@ function SlotRow({
   slot: Slot;
   mark: Mark | undefined;
   busy: boolean;
-  onMark: (key: string, status: "done" | "missed" | null, intensity?: number | null) => void;
+  onMark: (key: string, status: "done" | "missed" | null, intensity?: number | null, calories?: number | null) => void;
 }) {
   const [open, setOpen] = useState(false);
   const status = mark?.status;
@@ -251,12 +255,13 @@ function SlotRow({
 
   const accent = slot.domain ? `var(--color-${slot.domain})` : "var(--line)";
   const isCore = slot.kind === "core";
+  const isMeal = isMealSlot(slot);
 
   return (
     <li
       className="card overflow-hidden border-l-2"
       style={{
-        borderLeftColor: slot.tracked ? accent : "var(--line)",
+        borderLeftColor: slot.tracked || isMeal ? accent : "var(--line)",
         opacity: status === "missed" ? 0.55 : 1,
         background: slot.kind === "free" ? "transparent" : undefined,
       }}
@@ -287,7 +292,7 @@ function SlotRow({
           )}
         </div>
 
-        {slot.tracked && (
+        {(slot.tracked || isMeal) && (
           <div className="flex shrink-0 gap-1">
             <button
               type="button"
@@ -328,6 +333,29 @@ function SlotRow({
         day, which is how a sixty-second loop becomes a five-minute one nobody
         does.
       */}
+      {status === "done" && isMeal && (
+        <div className="flex items-center gap-2 px-3 pb-3" style={{ borderTop: "1px solid var(--line)", paddingTop: "0.6rem" }}>
+          <label className="dim shrink-0 text-[11px]" htmlFor={`calories-${slot.key}`}>Calories</label>
+          <input
+            id={`calories-${slot.key}`}
+            type="number"
+            min="0"
+            step="1"
+            inputMode="numeric"
+            defaultValue={mark?.calories ?? ""}
+            disabled={busy}
+            onBlur={(event) => {
+              const raw = event.currentTarget.value;
+              onMark(slot.key, "done", undefined, raw === "" ? null : Number(raw));
+            }}
+            className="w-24 rounded border px-2 py-1 text-sm disabled:opacity-40"
+            style={{ borderColor: "var(--line)", background: "transparent" }}
+            aria-label={`Calories for ${slot.label}`}
+          />
+          <span className="dim text-xs">cal</span>
+        </div>
+      )}
+
       {status === "done" && slot.kind === "core" && (
         <div
           className="flex items-center gap-2 px-3 pb-3"
