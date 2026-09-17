@@ -11,7 +11,7 @@
 
 import { DateTime } from "luxon";
 import type { IsoDate } from "./types";
-import { dayFor, trackedSlots, type DayOptions } from "./routine";
+import { dayFor, isMealSlot, trackedSlots, type DayOptions } from "./routine";
 
 export type SlotStatus = "done" | "missed";
 
@@ -21,6 +21,8 @@ export interface LogRow {
   status: SlotStatus;
   /** 1-10, or null when he skipped the second tap */
   intensity?: number | null;
+  /** optional meal calories */
+  calories?: number | null;
 }
 
 export interface SlotScore {
@@ -48,6 +50,12 @@ export interface Cell {
   intensity: number | null;
 }
 
+export interface DailyCalories {
+  date: IsoDate;
+  /** null means the food log is incomplete — chart this as a gap */
+  calories: number | null;
+}
+
 export interface Consistency {
   from: IsoDate;
   to: IsoDate;
@@ -66,6 +74,8 @@ export interface Consistency {
   dates: IsoDate[];
   /** mean rating across everything he rated, or null */
   avgIntensity: number | null;
+  /** one honest total per day, or null when any meal is incomplete */
+  dailyCalories: DailyCalories[];
 }
 
 function datesBetween(from: IsoDate, to: IsoDate): IsoDate[] {
@@ -106,11 +116,11 @@ export function consistency(
   );
   const start = firstLogged && firstLogged > from ? firstLogged : from;
   const dates = datesBetween(start, to);
-  const byDate = new Map<IsoDate, Map<string, { status: SlotStatus; intensity: number | null }>>();
+  const byDate = new Map<IsoDate, Map<string, { status: SlotStatus; intensity: number | null; calories: number | null }>>();
 
   for (const row of rows) {
-    const day = byDate.get(row.onDate) ?? new Map<string, { status: SlotStatus; intensity: number | null }>();
-    day.set(row.slotKey, { status: row.status, intensity: row.intensity ?? null });
+    const day = byDate.get(row.onDate) ?? new Map<string, { status: SlotStatus; intensity: number | null; calories: number | null }>();
+    day.set(row.slotKey, { status: row.status, intensity: row.intensity ?? null, calories: row.calories ?? null });
     byDate.set(row.onDate, day);
   }
 
@@ -124,6 +134,7 @@ export function consistency(
   let coreScheduled = 0;
 
   const fullDays: boolean[] = [];
+  const dailyCalories: DailyCalories[] = [];
 
   for (const date of dates) {
     const day = dayFor(date, options);
@@ -170,6 +181,18 @@ export function consistency(
     }
 
     fullDays.push(dayCoreTotal > 0 && dayCoreDone === dayCoreTotal);
+
+    let totalCalories = 0;
+    let caloriesComplete = true;
+    for (const meal of day.slots.filter(isMealSlot)) {
+      const mealMark = logged?.get(meal.key);
+      if (!mealMark || (mealMark.status === "done" && mealMark.calories === null)) {
+        caloriesComplete = false;
+        break;
+      }
+      if (mealMark.status === "done") totalCalories += mealMark.calories;
+    }
+    dailyCalories.push({ date, calories: caloriesComplete ? totalCalories : null });
   }
 
   const slots: SlotScore[] = [...totals.entries()].map(([key, v]) => ({
@@ -214,6 +237,7 @@ export function consistency(
     dates,
     avgIntensity:
       allRatings.length === 0 ? null : allRatings.reduce((a, b) => a + b, 0) / allRatings.length,
+    dailyCalories,
   };
 }
 
