@@ -4,7 +4,7 @@ import { z } from "zod";
 import { db } from "@/db/index";
 import { dayAdjustments, routineLog } from "@/db/schema";
 import { getSession } from "@/lib/auth";
-import { dayFor } from "@/core/routine";
+import { dayFor, isMealSlot } from "@/core/routine";
 import { consistency, windowEnding } from "@/core/consistency";
 import { today } from "@/core/clock";
 
@@ -18,6 +18,8 @@ const mark = z.object({
   status: z.enum(["done", "missed"]).nullable(),
   /** 1-10. Always optional — the tick must never wait on it. */
   intensity: z.number().int().min(1).max(10).nullable().optional(),
+  /** Optional: food can be checked off before calories are known. */
+  calories: z.number().int().min(0).nullable().optional(),
   note: z.string().max(500).nullable().optional(),
 });
 
@@ -59,6 +61,7 @@ export async function GET(request: Request) {
       slotKey: r.slotKey,
       status: r.status as "done" | "missed",
       intensity: r.intensity,
+      calories: r.calories,
     })),
   );
 
@@ -67,7 +70,7 @@ export async function GET(request: Request) {
     day,
     extraSchoolHour: adjustment?.extraSchoolHour === true,
     marks: Object.fromEntries(
-      marks.map((m) => [m.slotKey, { status: m.status, intensity: m.intensity }]),
+      marks.map((m) => [m.slotKey, { status: m.status, intensity: m.intensity, calories: m.calories }]),
     ),
     consistency: { core: score.core, currentStreak: score.currentStreak, slots: score.slots },
   });
@@ -96,7 +99,11 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: true });
   }
 
-  const { onDate, slotKey, status, intensity, note } = parsed.data;
+  const { onDate, slotKey, status, intensity, calories, note } = parsed.data;
+
+  if (calories !== undefined && !isMealSlot(slotKey)) {
+    return NextResponse.json({ ok: false, error: "Calories belong to meals only." }, { status: 400 });
+  }
 
   // clearing a mark removes the row rather than storing a third state: a day
   // he did not answer and a day he un-ticked should look identical
@@ -111,12 +118,20 @@ export async function POST(request: Request) {
   // ticking it does not wipe the tick, and re-ticking does not wipe the rating
   await db
     .insert(routineLog)
-    .values({ onDate, slotKey, status, intensity: intensity ?? null, note: note ?? null })
+    .values({
+      onDate,
+      slotKey,
+      status,
+      intensity: intensity ?? null,
+      calories: status === "missed" ? null : (calories ?? null),
+      note: note ?? null,
+    })
     .onConflictDoUpdate({
       target: [routineLog.onDate, routineLog.slotKey],
       set: {
         status,
         ...(intensity !== undefined ? { intensity } : {}),
+        ...(calories !== undefined ? { calories: status === "missed" ? null : calories } : status === "missed" ? { calories: null } : {}),
         ...(note !== undefined ? { note } : {}),
       },
     });
