@@ -136,6 +136,8 @@ export const routineLog = pgTable(
      * null.
      */
     intensity: integer("intensity"),
+    /** optional calories for a meal; blank until he knows the amount */
+    calories: integer("calories"),
     /** what he actually did, when it is worth keeping */
     note: text("note"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
