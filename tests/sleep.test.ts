@@ -1,119 +1,87 @@
 import { describe, it, expect } from "vitest";
-import {
-  bedtimeFor,
-  sleepNightFor,
-  fajrInterruptionFor,
-  dayEnvelope,
-  weeksIntoRamp,
-  DEFAULT_SLEEP,
-} from "../src/core/sleep";
+import { DEFAULT_SLEEP, netSleepFrom } from "../src/core/sleep";
+import { rawPrayerTimes } from "../src/core/prayer";
 import { hm, toHm } from "../src/core/types";
+import { DateTime } from "luxon";
 
-describe("sleep model", () => {
-  it("starts at the user's current bedtime, not the goal", () => {
-    expect(toHm(bedtimeFor("2026-09-15"))).toBe("23:00");
+function addDays(iso: string, days: number): string {
+  const next = DateTime.fromISO(iso).plus({ days }).toISODate();
+  if (!next) throw new Error(`Cannot step ${days} days from ${iso}`);
+  return next;
+}
+
+describe("net sleep", () => {
+  it("wraps across midnight", () => {
+    expect(netSleepFrom(hm("23:10"), hm("06:00"))).toBe(410);
+    expect(netSleepFrom(hm("22:00"), hm("06:00"))).toBe(480);
   });
 
-  it("walks bedtime 15 minutes earlier per week and stops at the goal", () => {
-    const seen: string[] = [];
-    for (let week = 0; week <= 8; week++) {
-      const date = `2026-${String(9 + Math.floor((15 + week * 7) / 30)).padStart(2, "0")}-01`;
-      void date;
-      seen.push(toHm(bedtimeFor(addDays("2026-09-15", week * 7))));
-    }
-    expect(seen).toEqual([
-      "23:00", "22:45", "22:30", "22:15", "22:00", "21:45", "21:40", "21:40", "21:40",
-    ]);
+  it("handles a bedtime after midnight", () => {
+    // 00:30 -> 06:00 is five and a half hours, not a negative number
+    expect(netSleepFrom(hm("00:30"), hm("06:00"))).toBe(330);
   });
 
-  it("never overshoots past the goal bedtime", () => {
-    expect(toHm(bedtimeFor(addDays("2026-09-15", 365)))).toBe("21:40");
+  it("gives a full day when the two times are equal", () => {
+    expect(netSleepFrom(hm("22:00"), hm("22:00"))).toBe(1440);
   });
 
-  it("does not move the bedtime before the ramp starts", () => {
-    expect(weeksIntoRamp("2026-09-01")).toBe(0);
-    expect(toHm(bedtimeFor("2026-09-01"))).toBe("23:00");
-  });
-
-  // September: Fajr ~05:19, before the 06:00 anchor, so the wake is possible.
-  it("charges the Fajr interruption only when Fajr was actually prayed", () => {
-    expect(fajrInterruptionFor("2026-09-15", true)).toBe(20);
-    const prayed = sleepNightFor("2026-09-15", true);
-    expect(prayed.fajrAfterDayStart).toBe(false);
-    expect(prayed.interruptionMin).toBe(20);
-  });
-
-  // Charging it unconditionally turned a measurement into a guess: it assumed
-  // a wake that may never have happened, and the coach's gate acted on it.
-  it("charges nothing when Fajr was not prayed", () => {
-    expect(fajrInterruptionFor("2026-09-15", false)).toBe(0);
-    expect(fajrInterruptionFor("2026-09-15")).toBe(0);
-    expect(sleepNightFor("2026-09-15", false).interruptionMin).toBe(0);
-  });
-
-  it("gives a longer night when Fajr was missed than when it was prayed", () => {
-    const prayed = sleepNightFor("2026-09-15", true).netSleepMin;
-    const missed = sleepNightFor("2026-09-15", false).netSleepMin;
-    expect(missed - prayed).toBe(20);
-  });
-
-  // At this latitude Fajr never reaches the 06:00 anchor. It runs from 04:11
-  // (mid-June) to 05:55 (the March DST jump), so the interruption is charged
-  // every single day of the year — there is no winter month where Fajr simply
-  // becomes the morning.
-  it("never lets Fajr reach dayStart anywhere in the year at this latitude", () => {
-    let latest = -1;
-    for (let i = 0; i < 365; i++) {
-      const date = addDays("2026-01-01", i);
-      latest = Math.max(latest, sleepNightFor(date, true).fajr);
-    }
-    expect(latest).toBeLessThan(DEFAULT_SLEEP.dayStart);
-    expect(latest).toBeGreaterThan(hm("05:45"));
-  });
-
-  it("can charge the interruption on any day of the year, once prayed", () => {
-    for (const date of ["2026-03-08", "2026-06-10", "2026-09-15", "2026-12-28"]) {
-      expect(fajrInterruptionFor(date, true), date).toBe(20);
-      expect(sleepNightFor(date, true).fajrAfterDayStart, date).toBe(false);
-    }
-  });
-
-  // The zero-interruption branch still has to work — it is what a move north,
-  // or a later Fajr convention, would hit.
-  it("charges nothing when Fajr does land after dayStart", () => {
-    const earlyRiser = { ...DEFAULT_SLEEP, dayStart: hm("05:00") };
-    const night = sleepNightFor("2026-09-15", true, earlyRiser);
-    expect(night.fajr).toBeGreaterThanOrEqual(earlyRiser.dayStart);
-    expect(night.fajrAfterDayStart).toBe(true);
-    expect(night.interruptionMin).toBe(0);
-  });
-
-  it("reports the user's real current sleep as well under target", () => {
-    // 23:00 -> 06:00 is 7h gross, 6h40m net once Fajr is actually prayed
-    const night = sleepNightFor("2026-09-15", true);
-    expect(night.netSleepMin).toBe(400);
-    expect(night.vsTargetMin).toBe(-80);
-  });
-
-  it("reaches the 8h target once the ramp completes", () => {
-    const night = sleepNightFor(addDays("2026-09-15", 7 * 7), true);
-    expect(toHm(night.bedtime)).toBe("21:40");
-    expect(night.netSleepMin).toBe(DEFAULT_SLEEP.targetSleepMin);
-    expect(night.vsTargetMin).toBe(0);
-  });
-
-  it("closes the day envelope at the ramped bedtime", () => {
-    const early = dayEnvelope("2026-09-15");
-    expect(early.start).toBe(hm("06:00"));
-    expect(early.end).toBe(hm("23:00"));
-
-    const later = dayEnvelope(addDays("2026-09-15", 7 * 7));
-    expect(later.end).toBe(hm("21:40"));
+  it("hits the target from the routine's own lights out", () => {
+    // 22:00 lights out, 06:00 wake — the routine is built to land exactly here
+    expect(netSleepFrom(hm("22:00"), DEFAULT_SLEEP.dayStart)).toBe(DEFAULT_SLEEP.targetSleepMin);
   });
 });
 
-function addDays(iso: string, days: number): string {
-  const d = new Date(`${iso}T12:00:00Z`);
-  d.setUTCDate(d.getUTCDate() + days);
-  return d.toISOString().slice(0, 10);
-}
+/**
+ * Why there is only one wake.
+ *
+ * The old model deducted twenty minutes a night for a Fajr wake, because Fajr
+ * enters before 06:00 every day of the year here. But the window does not close
+ * until sunrise, and through the school year sunrise is late enough that he can
+ * simply pray when he gets up. These tests are the evidence for that — if the
+ * calculation method or the location ever changes, they fail rather than
+ * quietly invalidating the whole morning.
+ */
+describe("one wake at 06:00", () => {
+  const WAKE = DEFAULT_SLEEP.dayStart;
+
+  it("has Fajr already entered at 06:00, every day of the year", () => {
+    let latest = -1;
+    for (let i = 0; i < 365; i++) {
+      latest = Math.max(latest, rawPrayerTimes(addDays("2026-08-01", i)).fajr);
+    }
+    expect(latest).toBeLessThan(WAKE);
+    // the closest it ever gets, the day before the November clock change
+    expect(toHm(latest)).toBe("05:51");
+  });
+
+  it("still has the window open at 06:00 from August through the start of May", () => {
+    for (let date = "2026-08-01"; date <= "2027-05-01"; date = addDays(date, 1)) {
+      const { fajr, sunrise } = rawPrayerTimes(date);
+      expect(fajr, date).toBeLessThan(WAKE);
+      expect(sunrise, date).toBeGreaterThan(WAKE);
+    }
+  });
+
+  /**
+   * The honest edge. From 2 May sunrise beats the alarm, so the last six weeks
+   * of school need an earlier wake or an earlier prayer — the routine's `wake`
+   * is a config field for exactly this.
+   */
+  it("loses the window on 2 May, not at the end of school", () => {
+    expect(rawPrayerTimes("2027-05-01").sunrise).toBeGreaterThan(WAKE);
+    expect(rawPrayerTimes("2027-05-02").sunrise).toBeLessThanOrEqual(WAKE);
+    expect(toHm(rawPrayerTimes("2027-05-02").sunrise)).toBe("06:00");
+  });
+
+  it("is comfortably open in the months that matter most", () => {
+    for (const [date, sunrise] of [
+      ["2026-08-12", "06:10"], // first day of term
+      ["2026-09-15", "06:32"],
+      ["2026-12-17", "06:44"], // last day of the semester
+      ["2027-01-15", "06:51"], // latest sunrise of the year
+      ["2027-04-15", "06:19"],
+    ] as const) {
+      expect(toHm(rawPrayerTimes(date).sunrise), date).toBe(sunrise);
+    }
+  });
+});

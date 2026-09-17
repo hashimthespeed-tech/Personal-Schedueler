@@ -1,28 +1,6 @@
 /** Core domain types. Pure data — no DB, no framework, no I/O. */
 
 export type Domain = "school" | "deen" | "ai" | "money" | "physique";
-export type Energy = "high" | "med" | "low";
-export type AgentName = "coach" | "tutor" | "ustadh" | "builder" | "system";
-
-/**
- * Where in the day a task belongs.
- *
- * Exists because a clock window is easy to omit and the omission is silent:
- * a "post-school meal" with no window got scheduled at 7:20 AM, and a
- * "phone down, lights out" at 6:50 AM. Naming the part of the day is far
- * harder to get wrong than picking times, and the concrete window is derived
- * per-day so it tracks the bedtime ramp and the school schedule.
- */
-export type DayPart =
-  | "morning"
-  | "midday"
-  | "after-school"
-  | "evening"
-  | "bedtime"
-  | "anytime";
-
-/** How often a task recurs across the horizon. */
-export type Recurrence = "once" | "daily" | "weekdays" | "weekends" | "weekly";
 
 /** Minutes since local midnight. Keeps slot math integer-only and DST-safe. */
 export type MinuteOfDay = number;
@@ -35,52 +13,6 @@ export interface TimeRange {
   start: MinuteOfDay;
   /** exclusive */
   end: MinuteOfDay;
-}
-
-/**
- * The integration contract. Every specialist emits this exact shape; the
- * solver is the only thing that turns one into a placed block.
- */
-export interface Task {
-  id: string;
-  domain: Domain;
-  title: string;
-  notes?: string;
-  durationMin: number;
-  /** null/undefined = indivisible, must be placed in one contiguous slot */
-  minChunkMin?: number | null;
-  /** hard due date; the task is worthless after it */
-  deadline?: IsoDate;
-  /** time-of-day window, e.g. lifting only after school */
-  earliestTime?: MinuteOfDay;
-  latestTime?: MinuteOfDay;
-  energy: Energy;
-  /** 1 = highest */
-  priority: 1 | 2 | 3 | 4 | 5;
-  /** minimum hours between this task and its previous occurrence */
-  spacing?: { minHoursBetween: number; groupKey: string };
-  /** restrict to specific weekdays (1 = Mon .. 7 = Sun) */
-  allowedWeekdays?: number[];
-  /** part of the day this belongs in; resolved to a window per date */
-  dayPart?: DayPart;
-  /** repeats across the horizon rather than being placed once */
-  recurrence?: Recurrence;
-  /** set when a recurring task has been expanded to one specific date */
-  pinnedDate?: IsoDate;
-  /**
-   * At most one of these per day. The emitting agent decides this — two
-   * training sessions in a day is a coaching judgement, not a timing one.
-   */
-  oncePerDay?: boolean;
-  /** groups tasks that share a oncePerDay budget, e.g. all lifting */
-  spacingGroupHint?: string;
-  /** ordered detail shown when the block is expanded */
-  steps?: string[];
-  /** which goal completing this counts toward */
-  goalId?: number;
-  sourceAgent: AgentName;
-  /** movement tags, checked against athlete restrictions before placement */
-  movementTags?: string[];
 }
 
 export interface FixedCommitment {
@@ -96,68 +28,6 @@ export interface FixedCommitment {
   /** true when this window is usable for schoolwork despite being fixed */
   workable?: boolean;
 }
-
-export interface Block {
-  taskId: string;
-  title: string;
-  domain: Domain;
-  date: IsoDate;
-  start: MinuteOfDay;
-  end: MinuteOfDay;
-  sourceAgent: AgentName;
-  /** set when a divisible task was split across slots */
-  chunkIndex?: number;
-  chunkCount?: number;
-  /** detail carried through so the UI can expand a block without a join */
-  notes?: string;
-  steps?: string[];
-  goalId?: number;
-}
-
-export type UnplacedReason =
-  | "no_slot_long_enough"
-  | "no_slot_before_deadline"
-  | "no_slot_in_time_window"
-  | "no_slot_on_allowed_weekday"
-  | "spacing_conflict"
-  | "movement_restricted"
-  | "day_at_capacity"
-  | "horizon_full";
-
-export interface Unplaced {
-  taskId: string;
-  title: string;
-  domain: Domain;
-  reason: UnplacedReason;
-  /** human-readable, shown directly in the UI */
-  detail: string;
-}
-
-export interface SolverResult {
-  blocks: Block[];
-  unplaced: Unplaced[];
-  /** fraction of available free time consumed, 0..1 */
-  utilization: number;
-  /** total free minutes in the horizon after fixed commitments and sleep */
-  freeMinutes: number;
-  /** total minutes actually scheduled */
-  scheduledMinutes: number;
-}
-
-/** A contiguous stretch of usable time on one date. */
-export interface Slot {
-  date: IsoDate;
-  /** 1 = Mon .. 7 = Sun */
-  weekday: number;
-  start: MinuteOfDay;
-  end: MinuteOfDay;
-  energy: Energy;
-  /** true if this slot is at school (period 7) — only schoolwork fits */
-  offSite?: boolean;
-}
-
-export const MIN = 1;
-export const HOUR = 60;
 
 /**
  * Normalize a minute-of-day that ran past midnight. Islamic midnight and
@@ -193,31 +63,4 @@ export function to12h(minute: MinuteOfDay): string {
   const suffix = h24 >= 12 ? "PM" : "AM";
   const h12 = h24 % 12 === 0 ? 12 : h24 % 12;
   return `${h12}:${String(m).padStart(2, "0")} ${suffix}`;
-}
-
-export function durationOf(range: TimeRange): number {
-  return range.end - range.start;
-}
-
-export function overlaps(a: TimeRange, b: TimeRange): boolean {
-  return a.start < b.end && b.start < a.end;
-}
-
-/** Subtract a set of busy ranges from one free range. Returns the gaps left. */
-export function subtractRanges(free: TimeRange, busy: TimeRange[]): TimeRange[] {
-  const sorted = busy
-    .filter((b) => overlaps(free, b))
-    .sort((a, b) => a.start - b.start);
-
-  const out: TimeRange[] = [];
-  let cursor = free.start;
-
-  for (const b of sorted) {
-    if (b.start > cursor) out.push({ start: cursor, end: Math.min(b.start, free.end) });
-    cursor = Math.max(cursor, b.end);
-    if (cursor >= free.end) break;
-  }
-  if (cursor < free.end) out.push({ start: cursor, end: free.end });
-
-  return out.filter((r) => r.end > r.start);
 }

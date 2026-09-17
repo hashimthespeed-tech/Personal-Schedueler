@@ -16,14 +16,13 @@ import { usePathname } from "next/navigation";
  */
 const PHONE = [
   { href: "/", label: "Today" },
-  { href: "/capture", label: "Capture" },
+  { href: "/capture", label: "Due" },
   { href: "/stats", label: "Stats" },
 ];
 
 const DESKTOP = [
   { href: "/", label: "Today" },
-  { href: "/hub", label: "Hub" },
-  { href: "/capture", label: "Capture" },
+  { href: "/capture", label: "Due" },
   { href: "/stats", label: "Stats" },
   { href: "/settings", label: "Settings" },
 ];

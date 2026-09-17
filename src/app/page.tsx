@@ -3,7 +3,7 @@ import { checkSchema } from "@/lib/schema-guard";
 import { SetupNeeded } from "@/components/SetupNeeded";
 import { DayView } from "@/components/DayView";
 import { SleepCard } from "@/components/SleepCard";
-import { today } from "@/agents/context";
+import { today } from "@/core/clock";
 
 export const dynamic = "force-dynamic";
 

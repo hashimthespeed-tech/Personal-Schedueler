@@ -42,7 +42,7 @@ export function SleepCard({
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState(bedtimeMin != null);
 
-  // one wake now: at 6:00 Fajr is inside its window all school year, so there
+  // one wake: at 6:00 Fajr is still inside its window (until 2 May), so there
   // is nothing to deduct and the span is the sleep
   const net = (wake + 1440 - (bed % 1440)) % 1440;
   const vsTarget = net - targetSleepMin;

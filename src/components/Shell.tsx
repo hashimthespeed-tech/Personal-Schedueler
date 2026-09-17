@@ -1,21 +1,10 @@
-"use client";
-
-import { usePathname } from "next/navigation";
-
 /**
- * The page container, chosen by route.
+ * The page container.
  *
- * Every screen here is a narrow reading column — a day, a form, a set of
- * numbers — except the hub, which is a two-pane workspace and wants the whole
- * window. Constraining it to the same 56rem column leaves the sidebar floating
- * in the middle of an empty page.
+ * Every screen is a narrow reading column now. The hub was the one exception
+ * and it no longer exists, so this is a plain wrapper — kept rather than
+ * inlined because the padding is shared by every page and belongs in one place.
  */
 export function Shell({ children }: { children: React.ReactNode }) {
-  const pathname = usePathname();
-
-  if (pathname === "/hub") {
-    return <main className="w-full">{children}</main>;
-  }
-
-  return <main className="mx-auto w-full max-w-lg px-4 pb-28 lg:max-w-4xl">{children}</main>;
+  return <main className="mx-auto w-full max-w-lg px-4 pb-28 lg:max-w-2xl">{children}</main>;
 }

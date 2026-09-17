@@ -2,12 +2,9 @@ import { NextResponse } from "next/server";
 import { desc, eq, gte } from "drizzle-orm";
 import { DateTime } from "luxon";
 import { db } from "@/db/index";
-import {
-  assignments, checkIns, conversations, courses, gems, goals, liftLog,
-  messages, metrics, routineLog, settings,
-} from "@/db/schema";
+import { assignments, checkIns, courses, goals, routineLog, settings } from "@/db/schema";
 import { getSession } from "@/lib/auth";
-import { today } from "@/agents/context";
+import { today } from "@/core/clock";
 import { prayerBlocks } from "@/core/prayer";
 import { dayFor, trackedSlots, type Day } from "@/core/routine";
 import { consistency, windowEnding } from "@/core/consistency";
@@ -29,7 +26,7 @@ export async function GET() {
   const date = today();
   const fortnight = windowEnding(date, 14);
 
-  const [settingsRow, goalRows, courseRows, assignmentRows, logRows, checkInRows, metricRows, liftRows, hubRows] =
+  const [settingsRow, goalRows, courseRows, assignmentRows, logRows, checkInRows] =
     await Promise.all([
       db.select().from(settings).limit(1),
       db.select().from(goals).where(eq(goals.active, true)),
@@ -37,15 +34,6 @@ export async function GET() {
       db.select().from(assignments).where(eq(assignments.status, "open")).orderBy(assignments.dueDate),
       db.select().from(routineLog).where(gte(routineLog.onDate, fortnight.from)).orderBy(desc(routineLog.onDate)),
       db.select().from(checkIns).where(gte(checkIns.onDate, fortnight.from)).orderBy(desc(checkIns.onDate)),
-      db.select().from(metrics).where(gte(metrics.onDate, fortnight.from)).orderBy(metrics.onDate),
-      db.select().from(liftLog).where(gte(liftLog.onDate, fortnight.from)).orderBy(desc(liftLog.onDate)),
-      db
-        .select({ role: messages.role, content: messages.content, gem: gems.label })
-        .from(messages)
-        .innerJoin(conversations, eq(messages.conversationId, conversations.id))
-        .innerJoin(gems, eq(conversations.gemId, gems.id))
-        .orderBy(desc(messages.createdAt))
-        .limit(10),
     ]);
 
   const L: string[] = [];
@@ -82,8 +70,6 @@ export async function GET() {
     L.push(`  location        ${s.latitude.toFixed(4)}, ${s.longitude.toFixed(4)} (${s.timezone})`);
     L.push(`  wake            ${toHm(day.wake)}, lights out ${toHm(day.lightsOut)}`);
     L.push(`  sleep target    ${(s.targetSleepMin / 60).toFixed(1)}h`);
-    L.push(`  wrestling       ${s.wrestlingPhase}`);
-    L.push(`  restrictions    ${(s.restrictions ?? []).join(", ") || "none"}`);
   }
 
   L.push("\n## Prayer today");
@@ -110,22 +96,8 @@ export async function GET() {
     L.push(`  ${c.onDate}: ${c.sleepMin ? (c.sleepMin / 60).toFixed(1) + "h" : "?"}${c.bedtimeMin != null ? ` (bed ${toHm(c.bedtimeMin)}, up ${toHm(c.wakeMin ?? 0)})` : ""}`);
   }
 
-  L.push(`\n## Metrics (${metricRows.length})`);
-  if (metricRows.length === 0) L.push("  none logged");
-  for (const m of metricRows) L.push(`  ${m.onDate} ${m.kind} = ${m.value}${m.unit ?? ""}`);
 
-  L.push(`\n## Lifts logged (${liftRows.length} sets)`);
-  if (liftRows.length === 0) L.push("  none");
-  for (const l of liftRows.slice(0, 20)) {
-    L.push(`  ${l.onDate} ${l.exerciseName}: ${l.reps} reps @ ${l.weight ?? "bw"}`);
-  }
 
-  L.push(`\n## Recent hub turns (${hubRows.length})`);
-  if (hubRows.length === 0) L.push("  none");
-  for (const t of [...hubRows].reverse()) {
-    const text = t.content.replace(/\s+/g, " ");
-    L.push(`  [${t.gem}/${t.role}] ${text.slice(0, 240)}${text.length > 240 ? "..." : ""}`);
-  }
 
   return new NextResponse(L.join("\n"), {
     headers: { "content-type": "text/plain; charset=utf-8" },

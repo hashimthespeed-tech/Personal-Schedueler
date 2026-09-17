@@ -13,10 +13,15 @@ interface SlotScore {
   rate: number;
 }
 
+interface Mark {
+  status: "done" | "missed";
+  intensity: number | null;
+}
+
 interface Payload {
   day: Day;
   extraSchoolHour: boolean;
-  marks: Record<string, "done" | "missed">;
+  marks: Record<string, Mark>;
   consistency: { core: number; currentStreak: number; slots: SlotScore[] };
 }
 
@@ -80,7 +85,18 @@ export function DayView({ initialDate }: { initialDate: string }) {
     void load(date);
   }, [date, load]);
 
-  async function mark(slotKey: string, status: "done" | "missed" | null) {
+  /**
+   * Tick, cross, or rate.
+   *
+   * `intensity` is sent only when he actually taps a number, so rating a slot
+   * never re-writes its status and ticking never wipes a rating. The tick is
+   * the whole obligation; the rating is optional forever.
+   */
+  async function mark(
+    slotKey: string,
+    status: "done" | "missed" | null,
+    intensity?: number | null,
+  ) {
     if (!data) return;
     setBusy(slotKey);
     setError("");
@@ -90,7 +106,12 @@ export function DayView({ initialDate }: { initialDate: string }) {
       if (!d) return d;
       const marks = { ...d.marks };
       if (status === null) delete marks[slotKey];
-      else marks[slotKey] = status;
+      else {
+        marks[slotKey] = {
+          status,
+          intensity: intensity !== undefined ? intensity : (marks[slotKey]?.intensity ?? null),
+        };
+      }
       return { ...d, marks };
     });
 
@@ -98,7 +119,13 @@ export function DayView({ initialDate }: { initialDate: string }) {
       const res = await fetch("/api/day", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ action: "mark", onDate: date, slotKey, status }),
+        body: JSON.stringify({
+          action: "mark",
+          onDate: date,
+          slotKey,
+          status,
+          ...(intensity !== undefined ? { intensity } : {}),
+        }),
       });
       if (!res.ok) {
         setError("That did not save.");
@@ -127,7 +154,7 @@ export function DayView({ initialDate }: { initialDate: string }) {
   if (!data) return <p className="dim card p-4 text-sm">Loading…</p>;
 
   const scored = data.day.slots.filter((s) => s.tracked);
-  const doneCount = scored.filter((s) => data.marks[s.key] === "done").length;
+  const doneCount = scored.filter((s) => data.marks[s.key]?.status === "done").length;
 
   return (
     <div className="space-y-4 pb-4">
@@ -173,7 +200,7 @@ export function DayView({ initialDate }: { initialDate: string }) {
           <SlotRow
             key={slot.key + slot.start}
             slot={slot}
-            status={data.marks[slot.key]}
+            mark={data.marks[slot.key]}
             busy={busy === slot.key}
             onMark={mark}
           />
@@ -201,16 +228,17 @@ export function DayView({ initialDate }: { initialDate: string }) {
 
 function SlotRow({
   slot,
-  status,
+  mark,
   busy,
   onMark,
 }: {
   slot: Slot;
-  status: "done" | "missed" | undefined;
+  mark: Mark | undefined;
   busy: boolean;
-  onMark: (key: string, status: "done" | "missed" | null) => void;
+  onMark: (key: string, status: "done" | "missed" | null, intensity?: number | null) => void;
 }) {
   const [open, setOpen] = useState(false);
+  const status = mark?.status;
 
   if (slot.kind === "anchor") {
     return (
@@ -292,6 +320,44 @@ function SlotRow({
           </div>
         )}
       </div>
+
+      {/*
+        The survey, such as it is.
+        Appears only after a tick, only on the four core hours, and skipping it
+        costs nothing. A prompt that blocked the tick would be seven prompts a
+        day, which is how a sixty-second loop becomes a five-minute one nobody
+        does.
+      */}
+      {status === "done" && slot.kind === "core" && (
+        <div
+          className="flex items-center gap-2 px-3 pb-3"
+          style={{ borderTop: "1px solid var(--line)", paddingTop: "0.6rem" }}
+        >
+          <span className="dim shrink-0 text-[11px]">
+            {mark?.intensity ? `Went ${mark.intensity}/10` : "How hard?"}
+          </span>
+          <div className="flex flex-1 justify-between gap-0.5">
+            {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((n) => (
+              <button
+                key={n}
+                type="button"
+                disabled={busy}
+                onClick={() => onMark(slot.key, "done", mark?.intensity === n ? null : n)}
+                aria-label={`Intensity ${n} of 10`}
+                className="flex-1 rounded text-[10px] tabular-nums disabled:opacity-40"
+                style={{
+                  paddingBlock: "0.3rem",
+                  background: mark?.intensity === n ? accent : "transparent",
+                  color: mark?.intensity === n ? "#fff" : "var(--dim)",
+                  border: `1px solid ${mark?.intensity === n ? accent : "var(--line)"}`,
+                }}
+              >
+                {n}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
     </li>
   );
 }

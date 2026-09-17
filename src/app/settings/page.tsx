@@ -3,8 +3,8 @@ import { settings } from "@/db/schema";
 import { requireSession } from "@/lib/auth";
 import { PushSetup } from "@/components/PushSetup";
 import { to12h } from "@/core/types";
-import { sleepNightFor } from "@/core/sleep";
-import { today } from "@/agents/context";
+import { dayFor } from "@/core/routine";
+import { today } from "@/core/clock";
 
 export const dynamic = "force-dynamic";
 
@@ -12,7 +12,8 @@ export default async function SettingsPage() {
   await requireSession();
 
   const row = (await db.select().from(settings).limit(1))[0];
-  const night = sleepNightFor(today(), false);
+  // one source of truth for bedtime: the routine, the same one Today shows
+  const day = dayFor(today());
 
   return (
     <div className="pt-6">
@@ -35,26 +36,24 @@ export default async function SettingsPage() {
 
             <section className="card p-4">
               <p className="mb-2 text-sm font-medium">Sleep</p>
-              <Row label="Wake" value={to12h(row.dayStartMin)} />
-              <Row label="Bedtime tonight" value={to12h(night.bedtime)} />
-              <Row label="Goal bedtime" value={to12h(row.goalBedtimeMin)} />
-              <Row label="Ramp" value={`${row.rampMinutesPerWeek} min/week`} />
-              <Row label="Fajr interruption" value={`${row.fajrInterruptionMin} min`} />
-            </section>
-
-            <section className="card p-4">
-              <p className="mb-2 text-sm font-medium">Training</p>
-              <Row label="Phase" value={row.wrestlingPhase} />
-              <Row label="Restrictions" value={(row.restrictions ?? []).join(", ") || "none"} />
-              <Row label="Calories" value={`${row.calorieTarget ?? "—"} kcal`} />
-              <Row label="Protein" value={`${row.proteinTargetG ?? "—"} g`} />
-            </section>
-
-            <section className="card p-4">
-              <p className="mb-2 text-sm font-medium">Scheduling</p>
-              <Row label="Max utilization" value={`${Math.round(row.maxUtilization * 100)}%`} />
+              <Row label="Wake" value={to12h(day.wake)} />
+              <Row label="Lights out" value={to12h(day.lightsOut)} />
+              <Row label="Target" value={`${(row.targetSleepMin / 60).toFixed(0)}h`} />
               <p className="dim mt-2 text-xs leading-relaxed">
-                The solver never books more than this share of free time.
+                One wake — Fajr is still inside its window at 6:00, so nothing comes off the
+                night. That holds until 2 May, when sunrise beats the alarm and the last weeks
+                of school need an earlier one.
+              </p>
+            </section>
+
+            <section className="card p-4">
+              <p className="mb-2 text-sm font-medium">The day</p>
+              <Row label="Core hours" value="4 — Islam, school, training, build" />
+              <Row label="Practice" value="Tuesday and Thursday" />
+              <Row label="Lifting" value="Mon, Wed, Fri, Sat" />
+              <p className="dim mt-2 text-xs leading-relaxed">
+                The routine is the same shape every week. Nothing reshuffles it overnight — if a
+                day needs to change, change it on Today and it stays changed for that day only.
               </p>
             </section>
           </>

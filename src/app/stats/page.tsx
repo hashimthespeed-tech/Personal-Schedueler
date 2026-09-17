@@ -4,19 +4,25 @@ import { routineLog } from "@/db/schema";
 import { requireSession } from "@/lib/auth";
 import { checkSchema } from "@/lib/schema-guard";
 import { SetupNeeded } from "@/components/SetupNeeded";
+import { Grid, IntensityChart, SlotTable } from "@/components/Consistency";
 import { consistency, windowEnding } from "@/core/consistency";
-import { today } from "@/agents/context";
+import { today } from "@/core/clock";
 
 export const dynamic = "force-dynamic";
 
-const RANGES = [7, 30, 90] as const;
+const RANGES = [
+  { days: 7, label: "Week" },
+  { days: 30, label: "Month" },
+  { days: 90, label: "Quarter" },
+] as const;
 
 /**
- * Consistency, which is the only number a fixed routine owes you.
+ * Consistency.
  *
- * The old stats page could not produce this honestly: blocks moved every
- * night, so a gap might be a miss or might be a block that was never placed.
- * With the same slots every day, `done / scheduled` means exactly what it says.
+ * The one number a fixed routine owes you, and the only thing the old
+ * solver-era stats page could never produce honestly: when blocks moved every
+ * night, a gap might have been a miss or might have been a block that was never
+ * placed. Same slots every day means done-over-scheduled means what it says.
  */
 export default async function StatsPage({
   searchParams,
@@ -29,10 +35,10 @@ export default async function StatsPage({
   if (!schema.ok) return <div className="pt-6"><SetupNeeded status={schema} /></div>;
 
   const { days: asked } = await searchParams;
-  const days = RANGES.find((r) => String(r) === asked) ?? 30;
+  const range = RANGES.find((r) => String(r.days) === asked) ?? RANGES[1];
 
   const date = today();
-  const window = windowEnding(date, days);
+  const window = windowEnding(date, range.days);
   const rows = await db.select().from(routineLog).where(gte(routineLog.onDate, window.from));
 
   const score = consistency(
@@ -42,14 +48,14 @@ export default async function StatsPage({
       onDate: r.onDate,
       slotKey: r.slotKey,
       status: r.status as "done" | "missed",
+      intensity: r.intensity,
     })),
   );
 
-  const core = score.slots.filter((s) => ["islam", "school-work", "train", "build"].includes(s.key));
-  const rest = score.slots.filter((s) => !core.includes(s));
+  const empty = rows.length === 0;
 
   return (
-    <div className="space-y-5 pt-6">
+    <div className="space-y-6 pt-6">
       <header>
         <h1 className="text-2xl font-semibold tracking-tight">Consistency</h1>
         <p className="dim text-sm">Same slots every day, so these numbers compare.</p>
@@ -58,77 +64,67 @@ export default async function StatsPage({
       <nav className="flex gap-1.5">
         {RANGES.map((r) => (
           <a
-            key={r}
-            href={`/stats?days=${r}`}
-            className="rounded-full px-3 py-1.5 text-xs font-medium"
+            key={r.days}
+            href={`/stats?days=${r.days}`}
+            className="rounded-full px-3.5 py-1.5 text-xs font-medium"
             style={
-              r === days
+              r.days === range.days
                 ? { background: "var(--fg)", color: "var(--bg)" }
                 : { border: "1px solid var(--line)", color: "var(--dim)" }
             }
           >
-            {r} days
+            {r.label}
           </a>
         ))}
       </nav>
 
-      <section className="card flex gap-6 p-4">
-        <div>
-          <p className="dim text-[11px] font-medium uppercase tracking-wide">Core hours</p>
-          <p className="text-3xl font-semibold tabular-nums">{Math.round(score.core * 100)}%</p>
-        </div>
-        <div>
-          <p className="dim text-[11px] font-medium uppercase tracking-wide">Streak</p>
-          <p className="text-3xl font-semibold tabular-nums">{score.currentStreak}</p>
-          <p className="dim text-xs">best {score.bestStreak}</p>
-        </div>
-      </section>
-
-      {rows.length === 0 ? (
+      {empty ? (
         <p className="dim card p-4 text-sm">
-          Nothing logged yet. Tick things off on Today and this fills in.
+          Nothing logged yet. Tick things off on Today and this fills in — the charts need a few
+          days before they say anything useful.
         </p>
       ) : (
         <>
-          <Group title="The four hours" slots={core} />
-          <Group title="Everything else" slots={rest} />
+          <section className="card grid grid-cols-2 gap-5 p-4 sm:grid-cols-4">
+            <Tile label="Core hours" value={`${Math.round(score.core * 100)}%`} />
+            <Tile label="Streak" value={String(score.currentStreak)} sub={`best ${score.bestStreak}`} />
+            <Tile label="Days" value={String(score.days)} sub="since you started" />
+            <Tile
+              label="Intensity"
+              value={score.avgIntensity === null ? "—" : score.avgIntensity.toFixed(1)}
+              sub={score.avgIntensity === null ? "not rated yet" : "out of 10"}
+            />
+          </section>
+
+          <section className="card p-4">
+            <h2 className="mb-3 text-sm font-semibold">Everything, day by day</h2>
+            <Grid score={score} />
+          </section>
+
+          <section className="card p-4">
+            <h2 className="mb-3 text-sm font-semibold">How hard you went</h2>
+            <IntensityChart score={score} />
+          </section>
+
+          <section className="card p-4">
+            <h2 className="mb-1 text-sm font-semibold">The numbers</h2>
+            <p className="dim mb-3 text-xs">
+              Skipped means you never answered — different from missing it, and not counted as one.
+            </p>
+            <SlotTable slots={score.slots} />
+          </section>
         </>
       )}
     </div>
   );
 }
 
-function Group({
-  title,
-  slots,
-}: {
-  title: string;
-  slots: { key: string; label: string; scheduled: number; done: number; silent: number; rate: number }[];
-}) {
-  if (slots.length === 0) return null;
-
+function Tile({ label, value, sub }: { label: string; value: string; sub?: string }) {
   return (
-    <section>
-      <h2 className="dim mb-2 text-[11px] font-medium uppercase tracking-wide">{title}</h2>
-      <ul className="space-y-2">
-        {slots.map((s) => (
-          <li key={s.key} className="card p-3">
-            <div className="mb-1.5 flex items-baseline justify-between gap-3">
-              <span className="text-sm font-medium">{s.label}</span>
-              <span className="dim text-xs tabular-nums">
-                {s.done}/{s.scheduled}
-                {s.silent > 0 && ` · ${s.silent} unanswered`}
-              </span>
-            </div>
-            <div className="h-1.5 overflow-hidden rounded-full" style={{ background: "var(--line)" }}>
-              <div
-                className="h-full rounded-full"
-                style={{ width: `${Math.round(s.rate * 100)}%`, background: "var(--fg)" }}
-              />
-            </div>
-          </li>
-        ))}
-      </ul>
-    </section>
+    <div>
+      <p className="dim text-[11px] font-medium uppercase tracking-wide">{label}</p>
+      <p className="text-2xl font-semibold tabular-nums">{value}</p>
+      {sub && <p className="dim text-[11px]">{sub}</p>}
+    </div>
   );
 }

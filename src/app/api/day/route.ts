@@ -6,7 +6,7 @@ import { dayAdjustments, routineLog } from "@/db/schema";
 import { getSession } from "@/lib/auth";
 import { dayFor } from "@/core/routine";
 import { consistency, windowEnding } from "@/core/consistency";
-import { today } from "@/agents/context";
+import { today } from "@/core/clock";
 
 export const dynamic = "force-dynamic";
 
@@ -16,6 +16,8 @@ const mark = z.object({
   slotKey: z.string().min(1).max(60),
   /** null clears a mark, which is how he undoes a mis-tap */
   status: z.enum(["done", "missed"]).nullable(),
+  /** 1-10. Always optional — the tick must never wait on it. */
+  intensity: z.number().int().min(1).max(10).nullable().optional(),
   note: z.string().max(500).nullable().optional(),
 });
 
@@ -56,6 +58,7 @@ export async function GET(request: Request) {
       onDate: r.onDate,
       slotKey: r.slotKey,
       status: r.status as "done" | "missed",
+      intensity: r.intensity,
     })),
   );
 
@@ -63,7 +66,9 @@ export async function GET(request: Request) {
     ok: true,
     day,
     extraSchoolHour: adjustment?.extraSchoolHour === true,
-    marks: Object.fromEntries(marks.map((m) => [m.slotKey, m.status])),
+    marks: Object.fromEntries(
+      marks.map((m) => [m.slotKey, { status: m.status, intensity: m.intensity }]),
+    ),
     consistency: { core: score.core, currentStreak: score.currentStreak, slots: score.slots },
   });
 }
@@ -91,7 +96,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: true });
   }
 
-  const { onDate, slotKey, status, note } = parsed.data;
+  const { onDate, slotKey, status, intensity, note } = parsed.data;
 
   // clearing a mark removes the row rather than storing a third state: a day
   // he did not answer and a day he un-ticked should look identical
@@ -102,12 +107,18 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: true, status: null });
   }
 
+  // intensity is only ever written when it was sent, so rating a slot after
+  // ticking it does not wipe the tick, and re-ticking does not wipe the rating
   await db
     .insert(routineLog)
-    .values({ onDate, slotKey, status, note: note ?? null })
+    .values({ onDate, slotKey, status, intensity: intensity ?? null, note: note ?? null })
     .onConflictDoUpdate({
       target: [routineLog.onDate, routineLog.slotKey],
-      set: { status, note: note ?? null },
+      set: {
+        status,
+        ...(intensity !== undefined ? { intensity } : {}),
+        ...(note !== undefined ? { note } : {}),
+      },
     });
 
   return NextResponse.json({ ok: true, status });

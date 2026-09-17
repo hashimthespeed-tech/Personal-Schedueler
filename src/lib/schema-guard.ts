@@ -20,13 +20,10 @@ export interface SchemaStatus {
 
 /** Columns added after the first deploy, which are the ones likely to be missing. */
 const EXPECTED: Record<string, string[]> = {
-  routine_log: ["on_date", "slot_key", "status"],
+  routine_log: ["on_date", "slot_key", "status", "intensity"],
   day_adjustments: ["on_date", "extra_school_hour"],
+  assignments: ["course_id", "title", "due_date", "status"],
   check_ins: ["wake_min", "bedtime_min"],
-  gems: ["key", "label", "category", "agent", "memory"],
-  conversations: ["gem_id", "title"],
-  messages: ["conversation_id", "role", "content"],
-  attachments: ["message_id", "media_type", "data"],
 };
 
 export async function checkSchema(): Promise<SchemaStatus> {

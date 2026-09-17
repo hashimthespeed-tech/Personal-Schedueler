@@ -10,7 +10,6 @@ import { courses, fixedCommitments, goals, settings } from "./schema";
 import { COURSES, TERM_S1, BELL_REG, BELL_FRI, fixedCommitmentsFor } from "../data/school";
 import { DEFAULT_SLEEP } from "../core/sleep";
 import { LA_MESA } from "../core/prayer";
-import { ANKLE_RESTRICTIONS } from "../coach/program";
 
 async function main() {
   console.log("Seeding…");
@@ -69,20 +68,11 @@ async function main() {
     longitude: LA_MESA.longitude,
     timezone: LA_MESA.timezone,
     dayStartMin: DEFAULT_SLEEP.dayStart,
-    fajrInterruptionMin: DEFAULT_SLEEP.fajrInterruptionMin,
     targetSleepMin: DEFAULT_SLEEP.targetSleepMin,
-    startBedtimeMin: DEFAULT_SLEEP.startBedtime,
-    goalBedtimeMin: DEFAULT_SLEEP.goalBedtime,
-    rampMinutesPerWeek: DEFAULT_SLEEP.rampMinutesPerWeek,
-    rampStartDate: DEFAULT_SLEEP.rampStartDate,
-        wrestlingPhase: "preseason",
-    restrictions: [...ANKLE_RESTRICTIONS],
     heightIn: 67.5,
     bodyweightGoalLb: 145,
-    calorieTarget: 2900,
-    proteinTargetG: 120,
   });
-  console.log("  settings: La Mesa, Jafari, 06:00 wake, 23:00→21:40 bedtime ramp, preseason");
+  console.log("  settings: La Mesa, Jafari, 06:00 wake, 8h target");
 
   const existingGoals = await db.select().from(goals);
   if (existingGoals.length === 0) {

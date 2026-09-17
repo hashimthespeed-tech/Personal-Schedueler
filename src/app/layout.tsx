@@ -8,6 +8,14 @@ export const metadata: Metadata = {
   description: "One schedule across school, deen, projects and training.",
   manifest: "/manifest.json",
   appleWebApp: { capable: true, statusBarStyle: "default", title: "Scheduler" },
+  // without these the browser goes looking for /favicon.ico, which is not there
+  icons: {
+    icon: [
+      { url: "/icons/icon-192.png", sizes: "192x192", type: "image/png" },
+      { url: "/icons/icon-512.png", sizes: "512x512", type: "image/png" },
+    ],
+    apple: "/icons/icon-192.png",
+  },
 };
 
 export const viewport: Viewport = {

@@ -16,6 +16,12 @@ function urlBase64ToUint8Array(base64: string): Uint8Array {
  * On iOS this only works inside an installed PWA, so the "needs-install" state
  * is a real outcome rather than an error — Safari reports notifications as
  * supported in a tab but silently never delivers.
+ *
+ * Nothing sends yet: `vercel.json` has no cron and `lib/push.ts` has no caller,
+ * so subscribing stores the device and stops there. The copy says so rather
+ * than promising a nudge that never comes. The subscription is the half that
+ * has to exist first, and a browser only offers the permission prompt once —
+ * so it stays, honestly labelled, instead of being deleted and asked for again.
  */
 export function PushSetup() {
   const [state, setState] = useState<State>("prompt");
@@ -91,13 +97,13 @@ export function PushSetup() {
       action: false,
     },
     prompt: {
-      title: "Turn on reminders",
-      body: "Get a nudge before each block and when tomorrow's plan is ready.",
+      title: "Allow reminders",
+      body: "Sets this phone up to receive them. Nothing is being sent yet — the evening nudge to mark your day still has to be built.",
       action: true,
     },
     granted: {
-      title: "Reminders on",
-      body: "You'll get a notification before blocks and when the nightly plan lands.",
+      title: "This phone is ready for reminders",
+      body: "Permission granted and the device is registered. Nothing sends yet, so you will not hear from it until the evening nudge is built.",
       action: false,
     },
     denied: {

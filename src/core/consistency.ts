@@ -19,6 +19,8 @@ export interface LogRow {
   onDate: IsoDate;
   slotKey: string;
   status: SlotStatus;
+  /** 1-10, or null when he skipped the second tap */
+  intensity?: number | null;
 }
 
 export interface SlotScore {
@@ -32,6 +34,18 @@ export interface SlotScore {
   silent: number;
   /** done / scheduled, 0..1 */
   rate: number;
+  /** mean of the ratings he gave, or null if he never rated this one */
+  avgIntensity: number | null;
+  domain: string | null;
+  kind: string;
+}
+
+/** One cell of the day-by-slot grid: what happened, and how hard. */
+export interface Cell {
+  date: IsoDate;
+  slotKey: string;
+  status: SlotStatus | null;
+  intensity: number | null;
 }
 
 export interface Consistency {
@@ -46,6 +60,12 @@ export interface Consistency {
   /** longest run of days where every core hour was done */
   bestStreak: number;
   currentStreak: number;
+  /** every tracked slot on every day in the window, for the grid */
+  grid: Cell[];
+  /** the dates the grid spans, in order */
+  dates: IsoDate[];
+  /** mean rating across everything he rated, or null */
+  avgIntensity: number | null;
 }
 
 function datesBetween(from: IsoDate, to: IsoDate): IsoDate[] {
@@ -86,15 +106,19 @@ export function consistency(
   );
   const start = firstLogged && firstLogged > from ? firstLogged : from;
   const dates = datesBetween(start, to);
-  const byDate = new Map<IsoDate, Map<string, SlotStatus>>();
+  const byDate = new Map<IsoDate, Map<string, { status: SlotStatus; intensity: number | null }>>();
 
   for (const row of rows) {
-    const day = byDate.get(row.onDate) ?? new Map<string, SlotStatus>();
-    day.set(row.slotKey, row.status);
+    const day = byDate.get(row.onDate) ?? new Map<string, { status: SlotStatus; intensity: number | null }>();
+    day.set(row.slotKey, { status: row.status, intensity: row.intensity ?? null });
     byDate.set(row.onDate, day);
   }
 
-  const totals = new Map<string, { label: string; scheduled: number; done: number; missed: number }>();
+  const totals = new Map<
+    string,
+    { label: string; domain: string | null; kind: string; scheduled: number; done: number; missed: number; ratings: number[] }
+  >();
+  const grid: Cell[] = [];
   const coreKeysSeen = new Set<string>();
   let coreDone = 0;
   let coreScheduled = 0;
@@ -110,15 +134,27 @@ export function consistency(
     for (const slot of trackedSlots(day)) {
       const entry = totals.get(slot.key) ?? {
         label: slot.label,
+        domain: slot.domain ?? null,
+        kind: slot.kind,
         scheduled: 0,
         done: 0,
         missed: 0,
+        ratings: [],
       };
       entry.scheduled += 1;
 
-      const status = logged?.get(slot.key);
+      const mark = logged?.get(slot.key);
+      const status = mark?.status;
       if (status === "done") entry.done += 1;
       else if (status === "missed") entry.missed += 1;
+      if (mark?.intensity != null) entry.ratings.push(mark.intensity);
+
+      grid.push({
+        date,
+        slotKey: slot.key,
+        status: status ?? null,
+        intensity: mark?.intensity ?? null,
+      });
 
       totals.set(slot.key, entry);
 
@@ -139,12 +175,18 @@ export function consistency(
   const slots: SlotScore[] = [...totals.entries()].map(([key, v]) => ({
     key,
     label: v.label,
+    domain: v.domain,
+    kind: v.kind,
     scheduled: v.scheduled,
     done: v.done,
     missed: v.missed,
     silent: v.scheduled - v.done - v.missed,
     rate: v.scheduled === 0 ? 0 : v.done / v.scheduled,
+    avgIntensity:
+      v.ratings.length === 0 ? null : v.ratings.reduce((a, b) => a + b, 0) / v.ratings.length,
   }));
+
+  const allRatings = [...totals.values()].flatMap((v) => v.ratings);
 
   const scheduledAll = slots.reduce((n, s) => n + s.scheduled, 0);
   const doneAll = slots.reduce((n, s) => n + s.done, 0);
@@ -168,6 +210,10 @@ export function consistency(
     core: coreScheduled === 0 ? 0 : coreDone / coreScheduled,
     bestStreak: best,
     currentStreak: current,
+    grid,
+    dates,
+    avgIntensity:
+      allRatings.length === 0 ? null : allRatings.reduce((a, b) => a + b, 0) / allRatings.length,
   };
 }
 

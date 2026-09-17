@@ -1,280 +1,289 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
-import type { CaptureCategory, CaptureTarget } from "@/data/capture-targets";
-import { downscale } from "@/lib/downscale";
+import { useCallback, useEffect, useState } from "react";
 
+interface Course {
+  id: number;
+  code: string;
+  name: string;
+  period: number;
+}
+
+interface Assignment {
+  id: number;
+  courseId: number;
+  title: string;
+  kind: string;
+  dueDate: string | null;
+  estimatedMin: number;
+}
+
+const KINDS = [
+  { id: "homework", label: "Homework", min: 45 },
+  { id: "reading", label: "Reading", min: 40 },
+  { id: "test", label: "Test", min: 120 },
+  { id: "project", label: "Project", min: 180 },
+] as const;
+
+function isoIn(days: number): string {
+  const d = new Date();
+  d.setDate(d.getDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
+function dueLabel(iso: string | null): string {
+  if (!iso) return "no date";
+  const days = Math.round(
+    (new Date(`${iso}T12:00:00`).getTime() - new Date().setHours(12, 0, 0, 0)) / 86_400_000,
+  );
+  if (days < 0) return `${Math.abs(days)}d overdue`;
+  if (days === 0) return "today";
+  if (days === 1) return "tomorrow";
+  return `${days} days`;
+}
+
+/**
+ * Adding something that's due.
+ *
+ * It used to photograph a worksheet and pay a model to read it. That cost money
+ * on every capture and guessed at the due date, which is the one field that has
+ * to be right. Four taps is faster than waiting for an answer, and it is never
+ * wrong about Thursday.
+ *
+ * The teacher writes it on a whiteboard and says it out loud once. The whole
+ * job is getting it off that board before it's gone, so nothing here blocks:
+ * a title and a course is a valid entry, everything else has a default.
+ */
 export function CaptureForm() {
-  const router = useRouter();
-  const cameraRef = useRef<HTMLInputElement>(null);
-  const libraryRef = useRef<HTMLInputElement>(null);
+  const [courses, setCourses] = useState<Course[] | null>(null);
+  const [open, setOpen] = useState<Assignment[]>([]);
 
-  const [categories, setCategories] = useState<CaptureCategory[] | null>(null);
-  const [category, setCategory] = useState<CaptureCategory | null>(null);
-  const [target, setTarget] = useState<CaptureTarget | null>(null);
+  const [courseId, setCourseId] = useState<number | null>(null);
+  const [title, setTitle] = useState("");
+  const [kind, setKind] = useState<(typeof KINDS)[number]["id"]>("homework");
+  const [dueDate, setDueDate] = useState(isoIn(1));
+  const [minutes, setMinutes] = useState(45);
 
-  const [file, setFile] = useState<File | null>(null);
-  const [preview, setPreview] = useState<string | null>(null);
-  const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
-  const [result, setResult] = useState<{ summary: string; created: string[] } | null>(null);
+  const [saved, setSaved] = useState("");
   const [error, setError] = useState("");
 
-  useEffect(() => {
-    fetch("/api/capture")
-      .then((r) => r.json())
-      .then((d: { categories?: CaptureCategory[] }) => setCategories(d.categories ?? []))
-      .catch(() => setError("Could not load the categories."));
+  const load = useCallback(async () => {
+    const res = await fetch("/api/capture");
+    if (!res.ok) return setError("Could not load your courses.");
+    const data = (await res.json()) as { courses: Course[]; assignments: Assignment[] };
+    setCourses(data.courses);
+    setOpen(data.assignments);
+    setCourseId((current) => current ?? data.courses[0]?.id ?? null);
   }, []);
 
-  function pick(e: React.ChangeEvent<HTMLInputElement>) {
-    const f = e.target.files?.[0];
-    if (!f) return;
-    setFile(f);
-    setResult(null);
-    setError("");
-    const reader = new FileReader();
-    reader.onload = () => setPreview(String(reader.result));
-    reader.readAsDataURL(f);
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  function pickKind(next: (typeof KINDS)[number]) {
+    setKind(next.id);
+    setMinutes(next.min);
+    // a test is rarely due tomorrow; a worksheet almost always is
+    if (next.id === "test" || next.id === "project") setDueDate(isoIn(7));
   }
 
-  function reset() {
-    setFile(null);
-    setPreview(null);
-    setNote("");
-    if (cameraRef.current) cameraRef.current.value = "";
-    if (libraryRef.current) libraryRef.current.value = "";
-  }
-
-  function back() {
-    reset();
-    setError("");
-    setResult(null);
-    if (target) setTarget(null);
-    else setCategory(null);
-  }
-
-  async function send() {
-    if (!file || !target) return;
+  async function add() {
+    if (!courseId || title.trim().length === 0 || busy) return;
     setBusy(true);
     setError("");
+
     try {
-      const { base64, mediaType } = await downscale(file);
       const res = await fetch("/api/capture", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ targetId: target.id, image: base64, mediaType, note }),
+        body: JSON.stringify({
+          action: "add",
+          courseId,
+          title: title.trim(),
+          kind,
+          dueDate: dueDate || null,
+          estimatedMin: minutes,
+        }),
       });
 
-      if (!res.headers.get("content-type")?.includes("application/json")) {
-        setError(
-          res.status === 504
-            ? "That took too long. Try a tighter photo of just the sheet."
-            : `Server error (${res.status}).`,
-        );
+      const data = (await res.json()) as { ok: boolean; error?: string; duplicate?: boolean };
+      if (!data.ok) {
+        setError(data.error ?? "That didn't save.");
         return;
       }
 
-      const data = (await res.json()) as {
-        ok: boolean; summary?: string; created?: string[]; error?: string;
-      };
-
-      if (!data.ok) {
-        setError(data.error ?? "Failed.");
-      } else {
-        setResult({ summary: data.summary ?? "", created: data.created ?? [] });
-        reset();
-        router.refresh();
-      }
+      setSaved(data.duplicate ? "Already on the list." : `Added "${title.trim()}".`);
+      setTitle("");
+      await load();
+      setTimeout(() => setSaved(""), 2500);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Something went wrong.");
+      setError(e instanceof Error ? e.message : "Network error.");
     } finally {
       setBusy(false);
     }
   }
 
-  if (!categories) return <p className="dim card p-4 text-sm">Loading…</p>;
+  async function close(id: number) {
+    setOpen((current) => current.filter((a) => a.id !== id));
+    await fetch("/api/capture", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ action: "close", id, status: "done" }),
+    });
+    await load();
+  }
 
-  // Step 1 — which part of life
-  if (!category) {
-    return (
-      <div className="space-y-4">
-        {result && <ResultCard result={result} />}
-        <div className="grid grid-cols-2 gap-3">
-          {categories.map((c) => (
+  if (!courses) return <p className="dim card p-4 text-sm">Loading…</p>;
+
+  const byId = new Map(courses.map((c) => [c.id, c]));
+
+  return (
+    <div className="space-y-5">
+      <section className="card space-y-3 p-4">
+        <div className="flex flex-wrap gap-1.5">
+          {courses.map((c) => (
             <button
               key={c.id}
               type="button"
-              onClick={() => setCategory(c)}
-              className={`card d-${c.domain} border-l-4 p-4 text-left`}
+              onClick={() => setCourseId(c.id)}
+              className="rounded-full px-3 py-1.5 text-xs font-medium"
+              style={
+                c.id === courseId
+                  ? { background: "var(--fg)", color: "var(--bg)" }
+                  : { border: "1px solid var(--line)", color: "var(--dim)" }
+              }
             >
-              <p className="text-sm font-semibold">{c.label}</p>
-              <p className="dim mt-0.5 text-xs">{c.targets.length} options</p>
+              {c.code}
             </button>
           ))}
         </div>
-      </div>
-    );
-  }
 
-  // Step 2 — which subject, meal, or thing
-  if (!target) {
-    return (
-      <div className="space-y-4">
-        <BackBar label={category.label} onBack={back} />
-        <ul className="space-y-2">
-          {category.targets.map((t) => (
-            <li key={t.id}>
-              <button
-                type="button"
-                onClick={() => setTarget(t)}
-                className={`card d-${t.domain} flex w-full items-center justify-between gap-3 border-l-4 p-3 text-left`}
-              >
-                <span>
-                  <span className="block text-sm font-medium">{t.label}</span>
-                  {t.hint && <span className="dim block text-xs">{t.hint}</span>}
-                </span>
-                <span className="dim text-xs">›</span>
-              </button>
-            </li>
+        <input
+          id="assignment-title"
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") void add();
+          }}
+          placeholder="Ch 14 questions 1–20"
+          autoComplete="off"
+          className="w-full rounded-xl px-3 py-2.5 text-sm outline-none"
+          style={{ background: "var(--bg)", border: "1px solid var(--line)", color: "var(--fg)" }}
+        />
+
+        <div className="flex flex-wrap gap-1.5">
+          {KINDS.map((k) => (
+            <button
+              key={k.id}
+              type="button"
+              onClick={() => pickKind(k)}
+              className="rounded-lg px-3 py-1.5 text-xs font-medium"
+              style={
+                k.id === kind
+                  ? { background: "var(--color-school)", color: "#fff" }
+                  : { border: "1px solid var(--line)", color: "var(--dim)" }
+              }
+            >
+              {k.label}
+            </button>
           ))}
-        </ul>
-      </div>
-    );
-  }
-
-  // Step 3 — take the photo
-  return (
-    <div className="space-y-4">
-      <BackBar label={`${category.label} · ${target.label}`} onBack={back} />
-
-      <input ref={cameraRef} type="file" accept="image/*" capture="environment" onChange={pick} hidden />
-      <input ref={libraryRef} type="file" accept="image/*" onChange={pick} hidden />
-
-      {preview ? (
-        <div className="card overflow-hidden">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={preview} alt="What you photographed" className="w-full" />
-          <button
-            type="button"
-            onClick={reset}
-            className="w-full border-t py-2.5 text-xs font-medium"
-            style={{ borderColor: "var(--line)" }}
-          >
-            Retake
-          </button>
         </div>
-      ) : (
-        <div className="space-y-2">
-          <button
-            type="button"
-            onClick={() => cameraRef.current?.click()}
-            className="flex w-full items-center justify-center gap-2 rounded-xl py-5 text-base font-semibold"
-            style={{ background: "var(--fg)", color: "var(--bg)" }}
-          >
-            <CameraIcon />
-            Take photo
-          </button>
-          <button
-            type="button"
-            onClick={() => libraryRef.current?.click()}
-            className="card w-full py-3 text-sm font-medium"
-          >
-            Choose from library
-          </button>
-          <p className="dim px-1 pt-1 text-xs leading-relaxed">{advice(target)}</p>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <label htmlFor="assignment-due" className="dim text-xs">
+            Due
+          </label>
+          <input
+            id="assignment-due"
+            type="date"
+            value={dueDate}
+            onChange={(e) => setDueDate(e.target.value)}
+            className="rounded-lg px-2.5 py-1.5 text-xs"
+            style={{ background: "var(--bg)", border: "1px solid var(--line)", color: "var(--fg)" }}
+          />
+          {[0, 1, 2, 7].map((d) => (
+            <button
+              key={d}
+              type="button"
+              onClick={() => setDueDate(isoIn(d))}
+              className="dim rounded-lg px-2.5 py-1.5 text-xs"
+              style={{ border: "1px solid var(--line)" }}
+            >
+              {d === 0 ? "Today" : d === 1 ? "Tomorrow" : `+${d}d`}
+            </button>
+          ))}
         </div>
-      )}
 
-      {preview && (
-        <>
-          <section className="card p-4">
-            <label htmlFor="note" className="text-sm font-medium">Anything to add</label>
-            <textarea
-              id="note"
-              value={note}
-              onChange={(e) => setNote(e.target.value)}
-              rows={2}
-              placeholder="Optional"
-              className="mt-2 w-full resize-none bg-transparent text-sm outline-none"
-              style={{ color: "var(--fg)" }}
-            />
-          </section>
+        <div className="flex items-center gap-3">
+          <label htmlFor="assignment-min" className="dim shrink-0 text-xs">
+            About {minutes} min
+          </label>
+          <input
+            id="assignment-min"
+            type="range"
+            min={10}
+            max={180}
+            step={5}
+            value={minutes}
+            onChange={(e) => setMinutes(Number(e.target.value))}
+            className="flex-1"
+          />
+        </div>
 
-          <button
-            type="button"
-            onClick={send}
-            disabled={busy}
-            className="w-full rounded-xl px-4 py-3.5 text-base font-medium disabled:opacity-40"
-            style={{ background: "var(--fg)", color: "var(--bg)" }}
-          >
-            {busy ? "Reading it…" : "Send"}
-          </button>
-        </>
-      )}
+        <button
+          type="button"
+          onClick={add}
+          disabled={busy || !courseId || title.trim().length === 0}
+          className="w-full rounded-xl py-2.5 text-sm font-medium disabled:opacity-40"
+          style={{ background: "var(--fg)", color: "var(--bg)" }}
+        >
+          {busy ? "Adding…" : "Add"}
+        </button>
 
-      {error && <p className="text-sm text-red-500">{error}</p>}
-      {result && <ResultCard result={result} />}
-    </div>
-  );
-}
+        {saved && <p className="dim text-xs">{saved}</p>}
+        {error && <p className="text-xs text-red-500">{error}</p>}
+      </section>
 
-function advice(target: CaptureTarget): string {
-  switch (target.kind) {
-    case "homework":
-      return "Get the whole sheet in frame, and make sure the due date is readable.";
-    case "syllabus":
-      return "Every dated row needs to be legible — that is the part that matters.";
-    case "meal":
-      return "Shoot the plate from above so the portions are clear.";
-    case "bodyweight":
-      return "Straight down at the display so the number is sharp.";
-    case "workout":
-      return "Your written sets — weight and reps both need to be readable.";
-    default:
-      return "Whatever you want kept.";
-  }
-}
-
-function BackBar({ label, onBack }: { label: string; onBack: () => void }) {
-  return (
-    <div className="flex items-center gap-2">
-      <button
-        type="button"
-        onClick={onBack}
-        className="card px-3 py-1.5 text-xs font-medium"
-      >
-        ‹ Back
-      </button>
-      <span className="dim truncate text-xs">{label}</span>
-    </div>
-  );
-}
-
-function ResultCard({ result }: { result: { summary: string; created: string[] } }) {
-  return (
-    <section className="card p-4">
-      <p className="text-sm leading-relaxed">{result.summary}</p>
-      {result.created.length > 0 && (
-        <>
-          <p className="dim mt-3 text-[11px] font-medium uppercase tracking-wide">Recorded</p>
-          <ul className="mt-1 space-y-0.5">
-            {result.created.map((c, i) => (
-              <li key={i} className="text-xs">{c}</li>
-            ))}
+      <section>
+        <h2 className="dim mb-2 text-[11px] font-medium uppercase tracking-wide">
+          Open ({open.length})
+        </h2>
+        {open.length === 0 ? (
+          <p className="dim card p-4 text-sm">
+            Nothing due. This is also what it looks like when you forgot to write something down.
+          </p>
+        ) : (
+          <ul className="space-y-1.5">
+            {open.map((a) => {
+              const course = byId.get(a.courseId);
+              const overdue = a.dueDate !== null && a.dueDate < isoIn(0);
+              return (
+                <li key={a.id} className="card flex items-center gap-3 p-3">
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-medium">{a.title}</p>
+                    <p className="dim text-xs">
+                      {course?.code ?? "?"} · {a.kind} · {a.estimatedMin} min ·{" "}
+                      <span style={overdue ? { color: "var(--color-physique)" } : undefined}>
+                        {dueLabel(a.dueDate)}
+                      </span>
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => close(a.id)}
+                    aria-label={`Mark ${a.title} done`}
+                    className="shrink-0 rounded-lg px-3 py-1.5 text-sm"
+                    style={{ border: "1px solid var(--line)" }}
+                  >
+                    ✓
+                  </button>
+                </li>
+              );
+            })}
           </ul>
-        </>
-      )}
-    </section>
-  );
-}
-
-function CameraIcon() {
-  return (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
-      <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
-      <circle cx="12" cy="13" r="4" />
-    </svg>
+        )}
+      </section>
+    </div>
   );
 }

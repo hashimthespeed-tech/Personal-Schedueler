@@ -74,10 +74,10 @@ export interface PrayerBlock {
   label: string;
   /** when the block's time enters */
   start: MinuteOfDay;
-  /** start + budgeted duration — what the solver carves out */
+  /** start + budgeted duration — what the routine reserves */
   end: MinuteOfDay;
   /**
-   * The full permissible window. The solver reserves only `start..end`, but
+   * The full permissible window. The routine reserves only `start..end`, but
    * the UI shows this so the user can see how much room they actually have.
    */
   window: TimeRange;
@@ -113,8 +113,7 @@ export function rawPrayerTimes(date: IsoDate, config: PrayerConfig = LA_MESA): R
  *
  * Window ends: the Dhuhr+Asr window runs until Maghrib; the Maghrib+Isha
  * window runs until Islamic midnight. Praying early in each window is
- * preferred — the solver reserves the front of it and treats the rest as
- * available time.
+ * preferred — the routine reserves the front of it and leaves the rest.
  */
 export function prayerBlocks(date: IsoDate, config: PrayerConfig = LA_MESA): PrayerBlock[] {
   const t = rawPrayerTimes(date, config);

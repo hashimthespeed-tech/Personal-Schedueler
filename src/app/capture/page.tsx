@@ -8,11 +8,8 @@ export default async function CapturePage() {
 
   return (
     <div className="pt-6">
-      <h1 className="text-2xl font-semibold tracking-tight">Capture</h1>
-      <p className="dim mb-5 text-sm">
-        Photograph something and the right specialist files it. For actually being tutored,
-        use the hub on a laptop.
-      </p>
+      <h1 className="text-2xl font-semibold tracking-tight">What's due</h1>
+      <p className="dim text-sm">Off the whiteboard, before it's gone.</p>
       <CaptureForm />
     </div>
   );

@@ -39,8 +39,7 @@ notepad .env
 
 If `npx` asks `Ok to proceed? (y)`, type `y` and press Enter.
 
-To generate the two random secrets, run this twice — the first result is
-`SESSION_PASSWORD`, the second is `CRON_SECRET`:
+To generate `SESSION_PASSWORD`, run this and copy the result:
 
 ```powershell
 -join ((1..48) | ForEach-Object { '{0:x}' -f (Get-Random -Max 16) })
@@ -55,12 +54,12 @@ cd Personal-Schedueler
 npm install
 cp .env.example .env
 npx web-push generate-vapid-keys
-openssl rand -hex 24    # run twice: SESSION_PASSWORD, then CRON_SECRET
+openssl rand -hex 24    # this is SESSION_PASSWORD
 ```
 
 ### Fill in .env, then create the tables
 
-Nine values, listed in the table in step 3 below. Then:
+Seven values, listed in the table in step 3 below. Then:
 
 ```
 npm run db:check   # confirms the connection works before anything else
@@ -94,21 +93,19 @@ database is ready.
 1. Go to https://vercel.com and sign in with GitHub
 2. **Add New → Project**, pick `Personal-Schedueler`
 3. Vercel detects Next.js automatically — do not change the build settings
-4. Expand **Environment Variables** and add all nine before you deploy:
+4. Expand **Environment Variables** and add all seven before you deploy:
 
 | Name | Value |
 |---|---|
 | `DATABASE_URL` | your Neon string, starts `postgresql://` |
-| `ANTHROPIC_API_KEY` | your key, starts `sk-ant-` |
-| `SESSION_PASSWORD` | first random string from step 2 |
+| `SESSION_PASSWORD` | the random string from step 2 |
 | `APP_PASSPHRASE` | you pick this — it is your login to the app |
 | `VAPID_PUBLIC_KEY` | Public Key printed by `web-push` |
 | `VAPID_PRIVATE_KEY` | Private Key printed by `web-push` |
 | `NEXT_PUBLIC_VAPID_PUBLIC_KEY` | the Public Key again — same value |
 | `VAPID_SUBJECT` | `mailto:` then your email |
-| `CRON_SECRET` | second random string from step 2 |
 
-The same nine go in your local `.env`. `NEXT_PUBLIC_VAPID_PUBLIC_KEY` really is
+The same seven go in your local `.env`. `NEXT_PUBLIC_VAPID_PUBLIC_KEY` really is
 a duplicate of `VAPID_PUBLIC_KEY`: the `NEXT_PUBLIC_` copy is the one the
 browser is allowed to read, which is why the private key has no twin.
 

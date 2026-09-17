@@ -4,9 +4,9 @@
  * Two bell schedules: REG (Mon-Thu) and FRI (late start).
  *
  * Period 7 is a free period the user spends on campus and can work through.
- * It is marked `workable`, which makes it the only fixed commitment the solver
- * is allowed to schedule into — and only for schoolwork, since he is at school
- * and has neither weights nor a private space.
+ * It is marked `workable`, which makes it the only fixed commitment the routine
+ * puts work inside — and only schoolwork, since he is at school and has
+ * neither weights nor a private space.
  */
 
 import type { FixedCommitment, MinuteOfDay } from "../core/types";

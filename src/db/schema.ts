@@ -1,9 +1,9 @@
 /**
- * Shared state — the single source of truth every agent reads and writes.
+ * What the app remembers.
  *
- * This is what makes a hub beat four separate chatbots: the Coach can see
- * sleep and bodyweight before it adds training load, and the scheduler can
- * see every domain's demands at once.
+ * The day itself is not in here — it is a pure function in `core/routine.ts`,
+ * the same shape every week. These tables hold only the things a function
+ * cannot know: what he actually did, when he slept, and what is due.
  */
 
 import {
@@ -106,33 +106,6 @@ export const prayerLog = pgTable(
   (t) => [unique("prayer_log_day_block").on(t.onDate, t.block)],
 );
 
-export const metrics = pgTable(
-  "metrics",
-  {
-    id: serial("id").primaryKey(),
-    onDate: date("on_date").notNull(),
-    kind: text("kind").notNull(), // bodyweight | calories | protein | quran-pages | ...
-    value: real("value").notNull(),
-    unit: text("unit"),
-  },
-  (t) => [index("metrics_kind_idx").on(t.kind, t.onDate)],
-);
-
-/** Every set of every session. The plan's "if you aren't tracking, you're just exercising." */
-export const liftLog = pgTable(
-  "lift_log",
-  {
-    id: serial("id").primaryKey(),
-    onDate: date("on_date").notNull(),
-    session: text("session").notNull(), // push | legs | pull | posterior-shoulders
-    exerciseName: text("exercise_name").notNull(),
-    setIndex: integer("set_index").notNull(),
-    reps: integer("reps").notNull(),
-    weight: real("weight"),
-  },
-  (t) => [index("lift_log_ex_idx").on(t.exerciseName, t.onDate)],
-);
-
 /**
  * What happened in a fixed slot, on a day.
  *
@@ -154,6 +127,15 @@ export const routineLog = pgTable(
     slotKey: text("slot_key").notNull(),
     /** done | missed */
     status: text("status").notNull(),
+    /**
+     * How hard he went, 1-10. Optional on purpose.
+     *
+     * The tick has to stay a single tap or the daily loop stops happening —
+     * that was the founding constraint and it is easy to spend. So intensity
+     * is a second, skippable tap, and every chart has to survive it being
+     * null.
+     */
+    intensity: integer("intensity"),
     /** what he actually did, when it is worth keeping */
     note: text("note"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
@@ -173,112 +155,6 @@ export const dayAdjustments = pgTable(
   },
 );
 
-/**
- * A file attached to a message.
- *
- * Its own table rather than a column on `messages` so that rendering a thread
- * does not drag every photograph in it through memory — the list reads name
- * and type only, and the bytes are fetched per file, which the browser then
- * caches.
- */
-export const attachments = pgTable(
-  "attachments",
-  {
-    id: serial("id").primaryKey(),
-    messageId: integer("message_id").notNull(),
-    name: text("name").notNull(),
-    /** image/jpeg | image/png | image/webp | image/gif | application/pdf */
-    mediaType: text("media_type").notNull(),
-    bytes: integer("bytes").notNull(),
-    /** base64, no data: prefix */
-    data: text("data").notNull(),
-    createdAt: timestamp("created_at").notNull().defaultNow(),
-  },
-  (t) => [index("attachments_message_idx").on(t.messageId)],
-);
-
-/**
- * A gem: one specialised assistant with its own memory and its own chats.
- *
- * The four specialists were too coarse. "Tutor" holding one conversation
- * across five AP courses means every question arrives with four subjects of
- * irrelevant history attached, and none of it accumulates into knowing how he
- * does calculus specifically. A gem per subject fixes both.
- *
- * Each gem still stands on a base specialist for its character and its tools;
- * `instructions` narrows it and `memory` is what it has learned to keep.
- */
-export const gems = pgTable("gems", {
-  id: serial("id").primaryKey(),
-  key: text("key").notNull().unique(),
-  label: text("label").notNull(),
-  blurb: text("blurb"),
-  /** grouping in the sidebar */
-  category: text("category").notNull(),
-  domain: text("domain").notNull(),
-  /** which specialist supplies the base prompt and tools */
-  agent: text("agent").notNull(),
-  /** set when this gem is one specific class */
-  courseCode: text("course_code"),
-  /** appended to the base prompt */
-  instructions: text("instructions"),
-  /**
-   * What this gem should carry between conversations. Written by the gem
-   * itself through the remember tool, so a new chat does not start from
-   * nothing.
-   */
-  memory: text("memory"),
-  sortOrder: integer("sort_order").notNull().default(0),
-  active: boolean("active").notNull().default(true),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-});
-
-export const conversations = pgTable(
-  "conversations",
-  {
-    id: serial("id").primaryKey(),
-    gemId: integer("gem_id").notNull(),
-    title: text("title").notNull().default("New chat"),
-    archived: boolean("archived").notNull().default(false),
-    createdAt: timestamp("created_at").notNull().defaultNow(),
-    updatedAt: timestamp("updated_at").notNull().defaultNow(),
-  },
-  (t) => [index("conversations_gem_idx").on(t.gemId, t.updatedAt)],
-);
-
-export const messages = pgTable(
-  "messages",
-  {
-    id: serial("id").primaryKey(),
-    conversationId: integer("conversation_id").notNull(),
-    role: text("role").notNull(),
-    content: text("content").notNull(),
-    /** what the turn changed, shown under the reply */
-    actions: jsonb("actions").$type<string[]>(),
-    createdAt: timestamp("created_at").notNull().defaultNow(),
-  },
-  (t) => [index("messages_conversation_idx").on(t.conversationId, t.createdAt)],
-);
-
-/** Superseded by conversations + messages; kept so old captures are not lost. */
-export const agentThreads = pgTable("agent_threads", {
-  id: serial("id").primaryKey(),
-  agent: text("agent").notNull(), // coach | tutor | ustadh | builder
-  role: text("role").notNull(), // user | assistant
-  content: text("content").notNull(),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-});
-
-/** Stage B's written explanation of what it changed and why. */
-export const planReviews = pgTable("plan_reviews", {
-  id: serial("id").primaryKey(),
-  planVersion: integer("plan_version").notNull(),
-  onDate: date("on_date").notNull(),
-  summary: text("summary").notNull(),
-  changes: jsonb("changes").$type<{ action: string; taskId: string; why: string }[]>(),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-});
-
 /** Single-row settings. */
 export const settings = pgTable("settings", {
   id: integer("id").primaryKey().default(1),
@@ -286,19 +162,9 @@ export const settings = pgTable("settings", {
   longitude: real("longitude").notNull(),
   timezone: text("timezone").notNull(),
   dayStartMin: integer("day_start_min").notNull(),
-  fajrInterruptionMin: integer("fajr_interruption_min").notNull(),
   targetSleepMin: integer("target_sleep_min").notNull(),
-  startBedtimeMin: integer("start_bedtime_min").notNull(),
-  goalBedtimeMin: integer("goal_bedtime_min").notNull(),
-  rampMinutesPerWeek: integer("ramp_minutes_per_week").notNull(),
-  rampStartDate: date("ramp_start_date").notNull(),
-  maxUtilization: real("max_utilization").notNull().default(0.7),
-  wrestlingPhase: text("wrestling_phase").notNull().default("preseason"),
-  restrictions: jsonb("restrictions").$type<string[]>(),
   heightIn: real("height_in"),
   bodyweightGoalLb: real("bodyweight_goal_lb"),
-  calorieTarget: integer("calorie_target"),
-  proteinTargetG: integer("protein_target_g"),
 });
 
 export const pushSubscriptions = pgTable("push_subscriptions", {

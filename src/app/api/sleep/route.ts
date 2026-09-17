@@ -1,11 +1,9 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { db } from "@/db/index";
-import { checkIns, prayerLog, settings } from "@/db/schema";
-import { and, eq } from "drizzle-orm";
+import { checkIns } from "@/db/schema";
 import { getSession } from "@/lib/auth";
 import { netSleepFrom } from "@/core/sleep";
-import { fajrInterruptionFor } from "@/core/sleep";
 
 const body = z.object({
   onDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
@@ -29,17 +27,8 @@ export async function POST(request: Request) {
 
   const { onDate, bedtimeMin, wakeMin } = parsed.data;
 
-  // only charge the Fajr wake if he actually marked it
-  const prayed = await db
-    .select()
-    .from(prayerLog)
-    .where(and(eq(prayerLog.onDate, onDate), eq(prayerLog.block, "fajr")))
-    .limit(1);
-  const status = prayed[0]?.status;
-  const prayedFajr = status === "on-time" || status === "late";
-
-  const row = (await db.select().from(settings).limit(1))[0];
-  const interruption = row ? fajrInterruptionFor(onDate, prayedFajr) : 0;
+  // One wake. He prays Fajr when he gets up at 06:00, inside its window all
+  // school year, so the night is simply bedtime to wake with nothing deducted.
   const sleepMin = netSleepFrom(bedtimeMin, wakeMin);
 
   await db
@@ -50,5 +39,5 @@ export async function POST(request: Request) {
       set: { bedtimeMin, wakeMin, sleepMin },
     });
 
-  return NextResponse.json({ ok: true, sleepMin, interruption });
+  return NextResponse.json({ ok: true, sleepMin });
 }
