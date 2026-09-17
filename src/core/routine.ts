@@ -50,6 +50,13 @@ export interface Slot {
   tracked: boolean;
 }
 
+export const MEAL_SLOT_KEYS = new Set(["breakfast", "post-school-meal", "dinner", "wind-down"]);
+
+/** Slots whose completion can carry an optional calorie value. */
+export function isMealSlot(slot: Pick<Slot, "key"> | string): boolean {
+  return MEAL_SLOT_KEYS.has(typeof slot === "string" ? slot : slot.key);
+}
+
 export interface Day {
   date: IsoDate;
   type: DayType;
