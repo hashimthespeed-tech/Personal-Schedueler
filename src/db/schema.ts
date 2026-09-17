@@ -76,123 +76,6 @@ export const fixedCommitments = pgTable("fixed_commitments", {
   workable: boolean("workable").notNull().default(false),
 });
 
-/**
- * The integration contract. Every specialist writes this shape; only the
- * scheduler turns one into a block.
- */
-export const tasks = pgTable(
-  "tasks",
-  {
-    id: text("id").primaryKey(),
-    domain: text("domain").notNull(),
-    title: text("title").notNull(),
-    notes: text("notes"),
-    durationMin: integer("duration_min").notNull(),
-    minChunkMin: integer("min_chunk_min"),
-    deadline: date("deadline"),
-    earliestTime: integer("earliest_time"),
-    latestTime: integer("latest_time"),
-    energy: text("energy").notNull().default("med"),
-    priority: integer("priority").notNull().default(3),
-    dayPart: text("day_part"),
-    recurrence: text("recurrence").notNull().default("once"),
-    /** at most one of these per day; set by the emitting agent */
-    oncePerDay: boolean("once_per_day").notNull().default(false),
-    spacingGroupHint: text("spacing_group_hint"),
-    /** ordered detail, shown only when the block is expanded */
-    steps: jsonb("steps").$type<string[]>(),
-    goalId: integer("goal_id"),
-    spacingHours: integer("spacing_hours"),
-    spacingGroup: text("spacing_group"),
-    allowedWeekdays: jsonb("allowed_weekdays").$type<number[]>(),
-    movementTags: jsonb("movement_tags").$type<string[]>(),
-    sourceAgent: text("source_agent").notNull(),
-    /**
-     * A stable slug the emitting agent chooses, unique within that agent.
-     *
-     * Without it, asking the coach to plan the week twice produced "Lift A —
-     * squat / bench / row" and "Lift A - full body" side by side: the prompt
-     * said not to duplicate, the model saw the pool, and it duplicated anyway
-     * under a different name. Instructions cannot enforce identity; a key can.
-     */
-    taskKey: text("task_key"),
-    /** links a task back to what produced it, e.g. an assignment */
-    sourceRef: text("source_ref"),
-    status: text("status").notNull().default("open"), // open | done | dropped
-    createdAt: timestamp("created_at").notNull().defaultNow(),
-  },
-  (t) => [
-    index("tasks_status_idx").on(t.status, t.deadline),
-    uniqueIndex("tasks_agent_key_idx").on(t.sourceAgent, t.taskKey),
-  ],
-);
-
-/** Scheduler output. Nothing else writes here. */
-export const blocks = pgTable(
-  "blocks",
-  {
-    id: serial("id").primaryKey(),
-    taskId: text("task_id").notNull(),
-    title: text("title").notNull(),
-    domain: text("domain").notNull(),
-    onDate: date("on_date").notNull(),
-    startMin: integer("start_min").notNull(),
-    endMin: integer("end_min").notNull(),
-    sourceAgent: text("source_agent").notNull(),
-    chunkIndex: integer("chunk_index"),
-    chunkCount: integer("chunk_count"),
-    notes: text("notes"),
-    steps: jsonb("steps").$type<string[]>(),
-    goalId: integer("goal_id"),
-    /** set from the nightly check-in */
-    completed: boolean("completed"),
-    planVersion: integer("plan_version").notNull().default(1),
-  },
-  (t) => [index("blocks_date_idx").on(t.onDate, t.startMin)],
-);
-
-/** What the solver could not fit, and why. Surfaced directly in the UI. */
-export const unplaced = pgTable("unplaced", {
-  id: serial("id").primaryKey(),
-  taskId: text("task_id").notNull(),
-  title: text("title").notNull(),
-  domain: text("domain").notNull(),
-  reason: text("reason").notNull(),
-  detail: text("detail").notNull(),
-  planVersion: integer("plan_version").notNull().default(1),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-});
-
-/**
- * What actually happened, and when.
- *
- * Separate from `blocks.completed` because blocks are replaced wholesale on
- * every replan — the plan is a projection, this is the record. Everything the
- * stats page reports is derived from here.
- */
-export const completions = pgTable(
-  "completions",
-  {
-    id: serial("id").primaryKey(),
-    blockId: integer("block_id"),
-    taskId: text("task_id"),
-    title: text("title").notNull(),
-    domain: text("domain").notNull(),
-    goalId: integer("goal_id"),
-    onDate: date("on_date").notNull(),
-    /** where it was scheduled, so lateness can be measured */
-    plannedStartMin: integer("planned_start_min"),
-    plannedEndMin: integer("planned_end_min"),
-    /** when it was actually marked done */
-    completedAt: timestamp("completed_at").notNull().defaultNow(),
-    /** minutes credited, normally the block length */
-    minutes: integer("minutes").notNull().default(0),
-    /** true when marked as skipped rather than done */
-    skipped: boolean("skipped").notNull().default(false),
-  },
-  (t) => [index("completions_date_idx").on(t.onDate, t.domain)],
-);
-
 export const checkIns = pgTable("check_ins", {
   id: serial("id").primaryKey(),
   /** the day he woke up on — sleep is reported the morning after, not the night of */
@@ -248,6 +131,70 @@ export const liftLog = pgTable(
     weight: real("weight"),
   },
   (t) => [index("lift_log_ex_idx").on(t.exerciseName, t.onDate)],
+);
+
+/**
+ * What happened in a fixed slot, on a day.
+ *
+ * This is the whole scheduler-side data model now. It replaces blocks,
+ * unplaced, completions and tasks: with the routine fixed, a day's shape is
+ * computed rather than stored, and the only thing worth persisting is whether
+ * each slot actually happened.
+ *
+ * Silence is meaningful and is therefore absent rather than recorded as a
+ * miss — a day with no rows is a day he did not answer, which is different
+ * from a day he failed.
+ */
+export const routineLog = pgTable(
+  "routine_log",
+  {
+    id: serial("id").primaryKey(),
+    onDate: date("on_date").notNull(),
+    /** matches Slot.key in core/routine.ts */
+    slotKey: text("slot_key").notNull(),
+    /** done | missed */
+    status: text("status").notNull(),
+    /** what he actually did, when it is worth keeping */
+    note: text("note"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("routine_log_day_slot_idx").on(t.onDate, t.slotKey)],
+);
+
+/** Days he asked for a second hour of school work. */
+export const dayAdjustments = pgTable(
+  "day_adjustments",
+  {
+    id: serial("id").primaryKey(),
+    onDate: date("on_date").notNull().unique(),
+    extraSchoolHour: boolean("extra_school_hour").notNull().default(false),
+    note: text("note"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+);
+
+/**
+ * A file attached to a message.
+ *
+ * Its own table rather than a column on `messages` so that rendering a thread
+ * does not drag every photograph in it through memory — the list reads name
+ * and type only, and the bytes are fetched per file, which the browser then
+ * caches.
+ */
+export const attachments = pgTable(
+  "attachments",
+  {
+    id: serial("id").primaryKey(),
+    messageId: integer("message_id").notNull(),
+    name: text("name").notNull(),
+    /** image/jpeg | image/png | image/webp | image/gif | application/pdf */
+    mediaType: text("media_type").notNull(),
+    bytes: integer("bytes").notNull(),
+    /** base64, no data: prefix */
+    data: text("data").notNull(),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => [index("attachments_message_idx").on(t.messageId)],
 );
 
 /**
@@ -311,81 +258,6 @@ export const messages = pgTable(
     createdAt: timestamp("created_at").notNull().defaultNow(),
   },
   (t) => [index("messages_conversation_idx").on(t.conversationId, t.createdAt)],
-);
-
-/**
- * Something a specialist cannot plan without.
- *
- * The tutor has no assignments and no test dates; the ustadh does not know how
- * much Quran he wants to read. Left alone, each one guesses, and a guessed week
- * is worse than an empty one. So a specialist declares the gap as data, and the
- * planner turns it into a real block on the calendar — a few minutes to go and
- * tell that gem what it needs. The system schedules its own repair.
- */
-export const needs = pgTable(
-  "needs",
-  {
-    id: serial("id").primaryKey(),
-    agent: text("agent").notNull(),
-    /** the gem to go and answer it in, when there is a specific one */
-    gemKey: text("gem_key"),
-    /** what to ask him, in his words */
-    question: text("question").notNull(),
-    /** why planning is stuck without it */
-    why: text("why").notNull(),
-    /** 1 = nothing sensible can be planned until this is answered */
-    urgency: integer("urgency").notNull().default(3),
-    resolvedAt: timestamp("resolved_at"),
-    createdAt: timestamp("created_at").notNull().defaultNow(),
-  },
-  (t) => [index("needs_open_idx").on(t.agent, t.resolvedAt)],
-);
-
-/**
- * A week the planner is proposing.
- *
- * Kept separate from `blocks` so a proposal can be looked at before it becomes
- * the schedule. It adopts itself when the week starts: a plan that needs
- * permission to exist is a plan that stops existing the first busy Sunday.
- */
-export const planProposals = pgTable("plan_proposals", {
-  id: serial("id").primaryKey(),
-  weekStart: date("week_start").notNull(),
-  /** proposed | approved | superseded | rejected */
-  status: text("status").notNull().default("proposed"),
-  /** what the planner decided and why, in plain sentences */
-  summary: text("summary").notNull(),
-  /** per-specialist notes, keyed by agent */
-  reports: jsonb("reports").$type<Record<string, string>>(),
-  /** what it could not fit, and why */
-  notFitting: jsonb("not_fitting").$type<string[]>(),
-  planVersion: integer("plan_version"),
-  decidedAt: timestamp("decided_at"),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-});
-
-/**
- * A file attached to a message.
- *
- * Its own table rather than a column on `messages` so that rendering a thread
- * does not drag every photograph in it through memory — the list reads name
- * and type only, and the bytes are fetched per file, which the browser then
- * caches.
- */
-export const attachments = pgTable(
-  "attachments",
-  {
-    id: serial("id").primaryKey(),
-    messageId: integer("message_id").notNull(),
-    name: text("name").notNull(),
-    /** image/jpeg | image/png | image/webp | image/gif | application/pdf */
-    mediaType: text("media_type").notNull(),
-    bytes: integer("bytes").notNull(),
-    /** base64, no data: prefix */
-    data: text("data").notNull(),
-    createdAt: timestamp("created_at").notNull().defaultNow(),
-  },
-  (t) => [index("attachments_message_idx").on(t.messageId)],
 );
 
 /** Superseded by conversations + messages; kept so old captures are not lost. */

@@ -1,7 +1,5 @@
 import { describe, it, expect } from "vitest";
 import { alternate } from "@/agents/gem";
-import { planStartFor } from "@/agents/planner";
-import { titleStem } from "@/agents/task-writer";
 import { slugify } from "@/agents/tools";
 import { gemSeeds, gemKeyForCapture } from "@/data/gems";
 import { ACCEPTED, MAX_FILES, MAX_PDF_BYTES, MAX_TOTAL_BASE64, describeSize, isImage } from "@/lib/attachments";
@@ -182,34 +180,6 @@ describe("attachment limits", () => {
     expect(describeSize(900)).toBe("900 B");
     expect(describeSize(2048)).toBe("2 KB");
     expect(describeSize(3_500_000)).toBe("3.3 MB");
-  });
-});
-
-describe("what week the planner is planning", () => {
-  it("plans from today when asked mid-week, not from a Monday already spent", () => {
-    // Wednesday: "week of Monday the 14th" names two days already lived
-    expect(planStartFor("2026-09-16")).toBe("2026-09-16");
-    expect(planStartFor("2026-09-14")).toBe("2026-09-14");
-    expect(planStartFor("2026-09-18")).toBe("2026-09-18");
-  });
-
-  it("rolls to Monday when asked at the weekend, which is the week he means", () => {
-    expect(planStartFor("2026-09-19")).toBe("2026-09-21");
-    expect(planStartFor("2026-09-20")).toBe("2026-09-21");
-  });
-});
-
-describe("task identity", () => {
-  it("reduces wording differences that are genuinely the same title", () => {
-    expect(titleStem("Morning weigh-in")).toBe(titleStem("morning weigh in"));
-    expect(titleStem("Food shop + batch cook")).toBe(titleStem("Food shop  batch cook"));
-  });
-
-  it("never collapses two different sessions into one", () => {
-    // silently overwriting Lift B with Lift A is worse than showing both
-    expect(titleStem("Lift A - full body")).not.toBe(titleStem("Lift B - full body"));
-    expect(titleStem("Lift A - full body")).not.toBe(titleStem("Lift A — squat / bench / row"));
-    expect(titleStem("APUSH ch. 12")).not.toBe(titleStem("APUSH ch. 13"));
   });
 });
 

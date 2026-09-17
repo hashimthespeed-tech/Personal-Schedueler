@@ -12,12 +12,14 @@ import { and, desc, eq, gte, inArray, sql } from "drizzle-orm";
 import { DateTime } from "luxon";
 import { db } from "../db/index";
 import {
-  assignments, blocks, checkIns, courses, goals, liftLog, metrics, prayerLog, settings, tasks, unplaced,
+  assignments, checkIns, courses, goals, liftLog, metrics, prayerLog, routineLog, settings,
 } from "../db/schema";
 import { prayerBlocks, LA_MESA, type PrayerConfig } from "../core/prayer";
 import { sleepNightFor, bedtimeFor, DEFAULT_SLEEP, type SleepModel } from "../core/sleep";
 import { evaluateGate } from "../coach/gating";
 import { to12h, toHm, type IsoDate } from "../core/types";
+import { coreSlots, dayFor } from "../core/routine";
+import { consistency } from "../core/consistency";
 import type { SpecialistName } from "./specialists";
 
 export function today(zone = LA_MESA.timezone): IsoDate {
@@ -91,8 +93,6 @@ async function commonContext(date: IsoDate): Promise<string> {
   const bedtime = bedtimeFor(date, sleep);
 
   const activeGoals = await db.select().from(goals).where(eq(goals.active, true));
-  const todaysBlocks = await db.select().from(blocks).where(eq(blocks.onDate, date)).orderBy(blocks.startMin);
-  const openUnplaced = await db.select().from(unplaced).orderBy(desc(unplaced.createdAt)).limit(10);
   const recentCheckIns = await db.select().from(checkIns)
     .where(gte(checkIns.onDate, daysAgo(date, 7))).orderBy(desc(checkIns.onDate));
 
@@ -136,40 +136,39 @@ async function commonContext(date: IsoDate): Promise<string> {
     }
   }
 
-  lines.push(`\n## Today's schedule`);
-  if (todaysBlocks.length === 0) {
-    lines.push(`Nothing scheduled yet.`);
-  } else {
-    for (const b of todaysBlocks) {
-      lines.push(`- ${to12h(b.startMin)}-${to12h(b.endMin)} [${b.domain}] ${b.title}`);
-    }
+  lines.push(`\n## His routine — fixed, and not yours to change`);
+  lines.push(
+    `The day is a fixed template, the same every week. You do not schedule anything and there ` +
+      `is no task list. What you have is one hour of his day, already on the calendar, and your ` +
+      `job is to tell him what to do inside it.`,
+  );
+  for (const slot of coreSlots(dayFor(date))) {
+    lines.push(`- ${to12h(slot.start)}-${to12h(slot.end)} ${slot.label}`);
   }
 
-  const openTasks = await db.select().from(tasks).where(eq(tasks.status, "open"));
-  lines.push(`\n## Task pool — what is ALREADY scheduled to happen (${openTasks.length})`);
-  if (openTasks.length === 0) {
-    lines.push(`Empty.`);
-  } else {
-    lines.push(`Do NOT re-create any of these. Adjust one if it is wrong, or close it if it should not happen.`);
-    for (const t of openTasks) {
-      const bits = [
-        `${t.durationMin}min`,
-        t.dayPart ?? "anytime",
-        t.recurrence === "once" ? "one-off" : t.recurrence,
-        `pri ${t.priority}`,
-        t.deadline ? `due ${t.deadline}` : null,
-        t.allowedWeekdays ? `days ${t.allowedWeekdays.join("/")}` : null,
-      ].filter(Boolean);
-      lines.push(`- [${t.domain}] ${t.title} (${bits.join(", ")}) — id ${t.id}, from ${t.sourceAgent}`);
-    }
-  }
+  const recent = await db
+    .select()
+    .from(routineLog)
+    .where(gte(routineLog.onDate, daysAgo(date, 14)))
+    .orderBy(desc(routineLog.onDate));
 
-  if (openUnplaced.length > 0) {
-    lines.push(`\n## Did not fit this week`);
-    lines.push(`These were dropped by the scheduler. If any belong to you, they are your problem to resolve.`);
-    for (const u of openUnplaced) {
-      lines.push(`- [${u.domain}] ${u.title}: ${u.detail}`);
+  if (recent.length === 0) {
+    lines.push(`\n## Consistency\nNothing logged in the last fortnight.`);
+  } else {
+    const score = consistency(daysAgo(date, 13), date, recent.map((r) => ({
+      onDate: r.onDate,
+      slotKey: r.slotKey,
+      status: r.status as "done" | "missed",
+    })));
+    lines.push(`\n## Consistency — last 14 days`);
+    lines.push(`Core hours done: ${Math.round(score.core * 100)}%. Current streak: ${score.currentStreak} days.`);
+    for (const s of score.slots) {
+      lines.push(`- ${s.label}: ${s.done}/${s.scheduled}${s.silent > 0 ? ` (${s.silent} unanswered)` : ""}`);
     }
+    lines.push(
+      `A slot he keeps missing is a planning problem, not a discipline problem. Say so, and say ` +
+        `what to change about the hour rather than telling him to try harder.`,
+    );
   }
 
   return lines.join("\n");
@@ -297,33 +296,22 @@ async function ustadhContext(date: IsoDate): Promise<string> {
 }
 
 async function builderContext(date: IsoDate): Promise<string> {
-  const projectTasks = await db.select().from(tasks)
-    .where(and(inArray(tasks.domain, ["ai", "money"]), eq(tasks.status, "open")));
-
-  const shipped = await db.select().from(tasks)
-    .where(and(inArray(tasks.domain, ["ai", "money"]), eq(tasks.status, "done")))
-    .orderBy(desc(tasks.createdAt)).limit(10);
+  const shipped = await db
+    .select()
+    .from(metrics)
+    .where(and(eq(metrics.kind, "shipped"), gte(metrics.onDate, daysAgo(date, 60))))
+    .orderBy(desc(metrics.onDate));
 
   const lines = [`\n## Builder view`];
+  lines.push(
+    `He has one hour a day for this, already on his calendar. Your job is what goes in it, not ` +
+      `when it happens.`,
+  );
 
-  lines.push(`\n### Open project work`);
-  if (projectTasks.length === 0) {
-    lines.push(`Nothing open. That is the problem to solve.`);
-  } else {
-    for (const t of projectTasks) lines.push(`- [${t.domain}] ${t.title} (${t.durationMin}min, priority ${t.priority})`);
-  }
-
-  lines.push(`\n### Recently shipped`);
   if (shipped.length === 0) {
-    lines.push(`Nothing shipped yet. Say so plainly.`);
+    lines.push(`Nothing logged as shipped in 60 days. Say so plainly.`);
   } else {
-    for (const t of shipped) lines.push(`- ${t.title}`);
-  }
-
-  const lastShipped = shipped[0];
-  if (lastShipped) {
-    const days = Math.floor(DateTime.fromISO(date).diff(DateTime.fromJSDate(lastShipped.createdAt), "days").days);
-    if (days > 10) lines.push(`\nNothing has shipped in ${days} days. Push on that.`);
+    lines.push(`Shipped in the last 60 days: ${shipped.length}.`);
   }
 
   return lines.join("\n");
@@ -339,16 +327,6 @@ const DOMAIN_CONTEXT: Record<SpecialistName, (date: IsoDate) => Promise<string>>
 export async function buildContext(agent: SpecialistName, date: IsoDate = today()): Promise<string> {
   const [common, domain] = await Promise.all([commonContext(date), DOMAIN_CONTEXT[agent](date)]);
   return `${common}\n${domain}`;
-}
-
-/** Count of open tasks per domain — cheap enough for a dashboard. */
-export async function domainCounts(): Promise<Record<string, number>> {
-  const rows = await db
-    .select({ domain: tasks.domain, n: sql<number>`count(*)::int` })
-    .from(tasks)
-    .where(eq(tasks.status, "open"))
-    .groupBy(tasks.domain);
-  return Object.fromEntries(rows.map((r) => [r.domain, r.n]));
 }
 
 export { toHm };

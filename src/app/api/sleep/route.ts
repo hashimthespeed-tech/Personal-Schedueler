@@ -4,7 +4,7 @@ import { db } from "@/db/index";
 import { checkIns, prayerLog, settings } from "@/db/schema";
 import { and, eq } from "drizzle-orm";
 import { getSession } from "@/lib/auth";
-import { netSleepFrom } from "@/core/timeline";
+import { netSleepFrom } from "@/core/sleep";
 import { fajrInterruptionFor } from "@/core/sleep";
 
 const body = z.object({
@@ -40,7 +40,7 @@ export async function POST(request: Request) {
 
   const row = (await db.select().from(settings).limit(1))[0];
   const interruption = row ? fajrInterruptionFor(onDate, prayedFajr) : 0;
-  const sleepMin = netSleepFrom(bedtimeMin, wakeMin, interruption);
+  const sleepMin = netSleepFrom(bedtimeMin, wakeMin);
 
   await db
     .insert(checkIns)

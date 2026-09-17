@@ -27,23 +27,24 @@ export function SleepCard({
   date,
   bedtimeMin,
   wakeMin,
-  fajrInterruptionMin,
-  targetSleepMin,
+  targetSleepMin = 480,
 }: {
   date: string;
-  bedtimeMin: number | null;
-  wakeMin: number | null;
-  fajrInterruptionMin: number;
-  targetSleepMin: number;
+  bedtimeMin?: number | null;
+  wakeMin?: number | null;
+  targetSleepMin?: number;
 }) {
   const router = useRouter();
-  const [bed, setBed] = useState(bedtimeMin === null ? 1380 : bedtimeMin < 720 ? bedtimeMin + 1440 : bedtimeMin);
+  const [bed, setBed] = useState(
+    bedtimeMin == null ? 1320 : bedtimeMin < 720 ? bedtimeMin + 1440 : bedtimeMin,
+  );
   const [wake, setWake] = useState(wakeMin ?? 360);
   const [busy, setBusy] = useState(false);
-  const [saved, setSaved] = useState(bedtimeMin !== null);
+  const [saved, setSaved] = useState(bedtimeMin != null);
 
-  const span = (wake + 1440 - (bed % 1440)) % 1440;
-  const net = Math.max(0, span - fajrInterruptionMin);
+  // one wake now: at 6:00 Fajr is inside its window all school year, so there
+  // is nothing to deduct and the span is the sleep
+  const net = (wake + 1440 - (bed % 1440)) % 1440;
   const vsTarget = net - targetSleepMin;
 
   async function save() {
@@ -108,9 +109,7 @@ export function SleepCard({
       />
 
       <p className="dim mt-2 text-xs leading-relaxed">
-        {fajrInterruptionMin > 0
-          ? `Minus ${fajrInterruptionMin} min for Fajr.`
-          : "Fajr falls after you're up today."}
+        {"Fajr is inside its window at 6:00 — one wake, nothing deducted."}
       </p>
 
       <button

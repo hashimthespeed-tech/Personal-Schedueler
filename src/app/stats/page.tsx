@@ -1,18 +1,23 @@
 import { gte } from "drizzle-orm";
-import { DateTime } from "luxon";
 import { db } from "@/db/index";
-import { checkIns, completions, goals } from "@/db/schema";
+import { routineLog } from "@/db/schema";
 import { requireSession } from "@/lib/auth";
+import { checkSchema } from "@/lib/schema-guard";
+import { SetupNeeded } from "@/components/SetupNeeded";
+import { consistency, windowEnding } from "@/core/consistency";
 import { today } from "@/agents/context";
-import {
-  statsByDomain, statsByGoal, overallScore, dailyCounts, datesInRange, DOMAIN_ORDER,
-} from "@/core/stats";
-import { StatTile, BarChart, DailyBars, LineChart } from "@/components/Charts";
-import { domainColor, domainLabel } from "@/lib/domains";
-import { StatsRange } from "@/components/StatsRange";
 
 export const dynamic = "force-dynamic";
 
+const RANGES = [7, 30, 90] as const;
+
+/**
+ * Consistency, which is the only number a fixed routine owes you.
+ *
+ * The old stats page could not produce this honestly: blocks moved every
+ * night, so a gap might be a miss or might be a block that was never placed.
+ * With the same slots every day, `done / scheduled` means exactly what it says.
+ */
 export default async function StatsPage({
   searchParams,
 }: {
@@ -20,163 +25,110 @@ export default async function StatsPage({
 }) {
   await requireSession();
 
-  const { days: daysParam } = await searchParams;
-  const days = daysParam === "7" ? 7 : daysParam === "90" ? 90 : 30;
+  const schema = await checkSchema();
+  if (!schema.ok) return <div className="pt-6"><SetupNeeded status={schema} /></div>;
+
+  const { days: asked } = await searchParams;
+  const days = RANGES.find((r) => String(r) === asked) ?? 30;
+
   const date = today();
-  const from = datesInRange(date, days)[0] ?? date;
+  const window = windowEnding(date, days);
+  const rows = await db.select().from(routineLog).where(gte(routineLog.onDate, window.from));
 
-  const [completionRows, checkInRows, goalRows] = await Promise.all([
-    db.select().from(completions).where(gte(completions.onDate, from)),
-    db.select().from(checkIns).where(gte(checkIns.onDate, from)).orderBy(checkIns.onDate),
-    db.select().from(goals).where(gte(goals.id, 0)),
-  ]);
-
-  const records = completionRows.map((c) => ({
-    onDate: c.onDate,
-    domain: c.domain,
-    goalId: c.goalId,
-    minutes: c.minutes,
-    skipped: c.skipped,
-    completedAt: c.completedAt,
-    plannedStartMin: c.plannedStartMin,
-  }));
-
-  const domainStats = statsByDomain(records, date);
-  const score = overallScore(domainStats);
-  const weeks = days / 7;
-  const goalStats = statsByGoal(records, goalRows.map((g) => ({ id: g.id, weeklyTarget: g.weeklyTarget })), weeks);
-  const daily = dailyCounts(records, date, Math.min(days, 42));
-
-  const totalDone = records.filter((r) => !r.skipped).length;
-  const totalMinutes = records.filter((r) => !r.skipped).reduce((n, r) => n + r.minutes, 0);
-  const bestStreak = Math.max(0, ...domainStats.map((d) => d.streak));
-
-  const energySeries = datesInRange(date, Math.min(days, 42)).map((d) => ({
-    date: d,
-    value: checkInRows.find((c) => c.onDate === d)?.energy ?? null,
-  }));
-  const sleepSeries = datesInRange(date, Math.min(days, 42)).map((d) => {
-    const min = checkInRows.find((c) => c.onDate === d)?.sleepMin;
-    return { date: d, value: min == null ? null : min / 60 };
-  });
-
-  const ordered = DOMAIN_ORDER.map((d) => domainStats.find((s) => s.domain === d)).filter(
-    (s): s is NonNullable<typeof s> => Boolean(s),
+  const score = consistency(
+    window.from,
+    window.to,
+    rows.map((r) => ({
+      onDate: r.onDate,
+      slotKey: r.slotKey,
+      status: r.status as "done" | "missed",
+    })),
   );
 
-  return (
-    <div className="pt-6">
-      <header className="mb-1 flex items-baseline justify-between">
-        <h1 className="text-2xl font-semibold tracking-tight">Stats</h1>
-        <StatsRange current={days} />
-      </header>
-      <p className="dim mb-5 text-sm">
-        Built from what you actually marked done, not from what was planned.
-      </p>
+  const core = score.slots.filter((s) => ["islam", "school-work", "train", "build"].includes(s.key));
+  const rest = score.slots.filter((s) => !core.includes(s));
 
-      {records.length === 0 ? (
+  return (
+    <div className="space-y-5 pt-6">
+      <header>
+        <h1 className="text-2xl font-semibold tracking-tight">Consistency</h1>
+        <p className="dim text-sm">Same slots every day, so these numbers compare.</p>
+      </header>
+
+      <nav className="flex gap-1.5">
+        {RANGES.map((r) => (
+          <a
+            key={r}
+            href={`/stats?days=${r}`}
+            className="rounded-full px-3 py-1.5 text-xs font-medium"
+            style={
+              r === days
+                ? { background: "var(--fg)", color: "var(--bg)" }
+                : { border: "1px solid var(--line)", color: "var(--dim)" }
+            }
+          >
+            {r} days
+          </a>
+        ))}
+      </nav>
+
+      <section className="card flex gap-6 p-4">
+        <div>
+          <p className="dim text-[11px] font-medium uppercase tracking-wide">Core hours</p>
+          <p className="text-3xl font-semibold tabular-nums">{Math.round(score.core * 100)}%</p>
+        </div>
+        <div>
+          <p className="dim text-[11px] font-medium uppercase tracking-wide">Streak</p>
+          <p className="text-3xl font-semibold tabular-nums">{score.currentStreak}</p>
+          <p className="dim text-xs">best {score.bestStreak}</p>
+        </div>
+      </section>
+
+      {rows.length === 0 ? (
         <p className="dim card p-4 text-sm">
-          Nothing recorded yet. Mark a block done on the Today tab and it starts here.
+          Nothing logged yet. Tick things off on Today and this fills in.
         </p>
       ) : (
-        <div className="space-y-6">
-          <div className="grid grid-cols-2 gap-3">
-            <StatTile
-              label="Consistency"
-              value={score === null ? "—" : `${Math.round(score * 100)}%`}
-              sub="mean across domains"
-            />
-            <StatTile label="Completed" value={String(totalDone)} sub={`${(totalMinutes / 60).toFixed(1)}h logged`} />
-          </div>
-
-          {bestStreak > 1 && (
-            <StatTile label="Longest current streak" value={`${bestStreak} days`} />
-          )}
-
-          <section>
-            <h2 className="mb-2 text-sm font-semibold">Consistency by goal area</h2>
-            <p className="dim mb-2 text-xs">Of what was scheduled, how much got done.</p>
-            <BarChart
-              rows={ordered.map((s) => ({
-                key: s.domain,
-                label: domainLabel(s.domain),
-                value: s.consistency ?? 0,
-                display: s.consistency === null ? "—" : `${Math.round(s.consistency * 100)}% · ${s.done}/${s.done + s.skipped}`,
-                color: domainColor(s.domain),
-              }))}
-            />
-          </section>
-
-          {goalRows.length > 0 && (
-            <section>
-              <h2 className="mb-2 text-sm font-semibold">Goals</h2>
-              <BarChart
-                max={1}
-                rows={goalRows.map((g) => {
-                  const stat = goalStats.find((x) => x.goalId === g.id);
-                  const perWeek = ((stat?.done ?? 0) / weeks).toFixed(1);
-                  return {
-                    key: String(g.id),
-                    label: g.northStar,
-                    value: stat?.progress ?? 0,
-                    display: g.weeklyTarget ? `${perWeek}/${g.weeklyTarget} per week` : `${stat?.done ?? 0} total`,
-                    color: domainColor(g.domain),
-                  };
-                })}
-              />
-            </section>
-          )}
-
-          <section>
-            <h2 className="mb-2 text-sm font-semibold">Completions per day</h2>
-            <DailyBars data={daily} />
-          </section>
-
-          <section>
-            <h2 className="mb-2 text-sm font-semibold">Energy</h2>
-            <LineChart data={energySeries} min={1} max={5} suffix=" of 5" />
-          </section>
-
-          <section>
-            <h2 className="mb-2 text-sm font-semibold">Sleep</h2>
-            <LineChart data={sleepSeries} min={4} max={10} suffix="h" decimals={1} />
-          </section>
-
-          {/* A table view is required, not optional: it is what makes the
-              numbers readable without relying on colour at all. */}
-          <section>
-            <h2 className="mb-2 text-sm font-semibold">The numbers</h2>
-            <div className="card overflow-x-auto">
-              <table className="w-full text-xs">
-                <thead>
-                  <tr className="dim border-b" style={{ borderColor: "var(--line)" }}>
-                    <th className="p-2 text-left font-medium">Area</th>
-                    <th className="p-2 text-right font-medium">Done</th>
-                    <th className="p-2 text-right font-medium">Skipped</th>
-                    <th className="p-2 text-right font-medium">Hours</th>
-                    <th className="p-2 text-right font-medium">Streak</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {ordered.map((s) => (
-                    <tr key={s.domain} className="border-b last:border-0" style={{ borderColor: "var(--line)" }}>
-                      <td className="p-2">{domainLabel(s.domain)}</td>
-                      <td className="p-2 text-right tabular-nums">{s.done}</td>
-                      <td className="p-2 text-right tabular-nums">{s.skipped}</td>
-                      <td className="p-2 text-right tabular-nums">{(s.minutes / 60).toFixed(1)}</td>
-                      <td className="p-2 text-right tabular-nums">{s.streak}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </section>
-
-          <p className="dim text-xs">
-            {DateTime.fromISO(from).toFormat("d LLL")} – {DateTime.fromISO(date).toFormat("d LLL")}
-          </p>
-        </div>
+        <>
+          <Group title="The four hours" slots={core} />
+          <Group title="Everything else" slots={rest} />
+        </>
       )}
     </div>
+  );
+}
+
+function Group({
+  title,
+  slots,
+}: {
+  title: string;
+  slots: { key: string; label: string; scheduled: number; done: number; silent: number; rate: number }[];
+}) {
+  if (slots.length === 0) return null;
+
+  return (
+    <section>
+      <h2 className="dim mb-2 text-[11px] font-medium uppercase tracking-wide">{title}</h2>
+      <ul className="space-y-2">
+        {slots.map((s) => (
+          <li key={s.key} className="card p-3">
+            <div className="mb-1.5 flex items-baseline justify-between gap-3">
+              <span className="text-sm font-medium">{s.label}</span>
+              <span className="dim text-xs tabular-nums">
+                {s.done}/{s.scheduled}
+                {s.silent > 0 && ` · ${s.silent} unanswered`}
+              </span>
+            </div>
+            <div className="h-1.5 overflow-hidden rounded-full" style={{ background: "var(--line)" }}>
+              <div
+                className="h-full rounded-full"
+                style={{ width: `${Math.round(s.rate * 100)}%`, background: "var(--fg)" }}
+              />
+            </div>
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }

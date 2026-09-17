@@ -16,21 +16,16 @@ import { usePathname } from "next/navigation";
  */
 const PHONE = [
   { href: "/", label: "Today" },
-  { href: "/plan", label: "Plan" },
   { href: "/capture", label: "Capture" },
-  { href: "/checkin", label: "Check in" },
   { href: "/stats", label: "Stats" },
 ];
 
 const DESKTOP = [
   { href: "/", label: "Today" },
-  { href: "/week", label: "Week" },
-  { href: "/plan", label: "Plan" },
   { href: "/hub", label: "Hub" },
   { href: "/capture", label: "Capture" },
-  { href: "/checkin", label: "Check in" },
   { href: "/stats", label: "Stats" },
-  { href: "/manage", label: "Manage" },
+  { href: "/settings", label: "Settings" },
 ];
 
 function isActive(pathname: string, href: string): boolean {

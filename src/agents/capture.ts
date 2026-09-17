@@ -13,15 +13,13 @@
 import type Anthropic from "@anthropic-ai/sdk";
 import { eq } from "drizzle-orm";
 import { db } from "@/db/index";
-import { assignments, courses, goals, liftLog, metrics, tasks } from "@/db/schema";
+import { assignments, courses, goals, liftLog, metrics } from "@/db/schema";
 import { anthropic, AGENT_MODEL, describeApiError } from "./client";
 import {
-  EMIT_TASK, LOG_METRIC, LOG_MEAL, LOG_WORKOUT,
-  emitTaskInput, logMetricInput, logMealInput, logWorkoutInput,
+  LOG_ASSIGNMENT, LOG_METRIC, LOG_MEAL, LOG_WORKOUT,
+  logAssignmentInput, logMetricInput, logMealInput, logWorkoutInput,
 } from "./tools";
 import { buildContext, today } from "./context";
-import { writeTask } from "./task-writer";
-import { replan } from "@/core/replan";
 import { hm, type IsoDate } from "@/core/types";
 import type { SpecialistName } from "./specialists";
 import type { CaptureKind, CaptureTarget } from "@/data/capture-targets";
@@ -148,7 +146,7 @@ export async function runCapture(
         ? [LOG_METRIC]
         : target.kind === "workout"
           ? [LOG_WORKOUT]
-          : [EMIT_TASK];
+          : [LOG_ASSIGNMENT];
 
   const subject = course
     ? `This is for ${course.name} (period ${course.period}, ${course.teacher ?? "unknown teacher"}).`
@@ -184,7 +182,6 @@ export async function runCapture(
 
   const created: string[] = [];
   let summary = "";
-  let poolChanged = false;
 
   try {
     for (let turn = 0; turn < MAX_TURNS; turn++) {
@@ -225,29 +222,26 @@ export async function runCapture(
         try {
           let out: string;
 
-          if (call.name === "emit_task") {
-            const parsed = emitTaskInput.parse(call.input);
-            const written = await writeTask(parsed, agent, `capture:${target.id}`);
+          if (call.name === "log_assignment") {
+            const parsed = logAssignmentInput.parse(call.input);
+            const course = target.courseCode
+              ? (await db.select().from(courses).where(eq(courses.code, target.courseCode)).limit(1))[0]
+              : undefined;
 
-            if (written.created && target.kind === "homework" && target.courseCode) {
-              const course = (
-                await db.select().from(courses).where(eq(courses.code, target.courseCode)).limit(1)
-              )[0];
-              if (course) {
-                await db.insert(assignments).values({
-                  courseId: course.id,
-                  title: parsed.title,
-                  kind: "homework",
-                  dueDate: parsed.deadline,
-                  estimatedMin: parsed.durationMin,
-                  notes: parsed.steps?.join("\n") ?? null,
-                });
-              }
+            if (!course) {
+              out = "No course on this capture, so there is nowhere to file it.";
+            } else {
+              await db.insert(assignments).values({
+                courseId: course.id,
+                title: parsed.title,
+                kind: parsed.kind,
+                dueDate: parsed.dueDate ?? null,
+                estimatedMin: parsed.estimatedMin,
+                notes: parsed.notes ?? null,
+              });
+              created.push(`${parsed.title}${parsed.dueDate ? ` (due ${parsed.dueDate})` : ""}`);
+              out = `Filed under ${course.name}. It shows up in his school hour, which is already on the calendar.`;
             }
-
-            created.push(parsed.title);
-            poolChanged = true;
-            out = written.message;
           } else if (call.name === "log_meal") {
             const parsed = logMealInput.parse(call.input);
             await db.insert(metrics).values([
@@ -321,7 +315,6 @@ export async function runCapture(
     );
   }
 
-  if (poolChanged) await replan(date);
 
-  return { summary: summary || "Nothing to record from that.", created, replanned: poolChanged };
+  return { summary: summary || "Nothing to record from that.", created, replanned: false };
 }

@@ -11,7 +11,6 @@ import { COURSES, TERM_S1, BELL_REG, BELL_FRI, fixedCommitmentsFor } from "../da
 import { DEFAULT_SLEEP } from "../core/sleep";
 import { LA_MESA } from "../core/prayer";
 import { ANKLE_RESTRICTIONS } from "../coach/program";
-import { DEFAULT_MAX_UTILIZATION } from "../core/solver";
 
 async function main() {
   console.log("Seeding…");
@@ -76,8 +75,7 @@ async function main() {
     goalBedtimeMin: DEFAULT_SLEEP.goalBedtime,
     rampMinutesPerWeek: DEFAULT_SLEEP.rampMinutesPerWeek,
     rampStartDate: DEFAULT_SLEEP.rampStartDate,
-    maxUtilization: DEFAULT_MAX_UTILIZATION,
-    wrestlingPhase: "preseason",
+        wrestlingPhase: "preseason",
     restrictions: [...ANKLE_RESTRICTIONS],
     heightIn: 67.5,
     bodyweightGoalLb: 145,

@@ -148,3 +148,16 @@ export function dayEnvelope(
 ): { start: MinuteOfDay; end: MinuteOfDay } {
   return { start: model.dayStart, end: bedtimeFor(date, model) };
 }
+
+/**
+ * Net sleep from a reported bedtime and wake, wrapping past midnight.
+ *
+ * Reported, not modelled: he says when he actually went down and got up the
+ * next morning, which is the only figure worth trusting. There is no Fajr
+ * deduction any more — with a 6:00 wake, Fajr is inside its window and he
+ * gets up once.
+ */
+export function netSleepFrom(bedtimeMin: number, wakeMin: number): number {
+  const raw = wakeMin - bedtimeMin;
+  return raw > 0 ? raw : raw + 1440;
+}

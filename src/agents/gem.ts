@@ -10,14 +10,12 @@ import type Anthropic from "@anthropic-ai/sdk";
 import { and, asc, eq, inArray, notInArray } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db/index";
-import { attachments, conversations, gems, messages, metrics, tasks } from "@/db/schema";
+import { attachments, assignments, conversations, courses, gems, messages, metrics } from "@/db/schema";
 import { isImage } from "@/lib/attachments";
 import { anthropic, AGENT_MODEL, describeApiError } from "./client";
-import { SPECIALIST_TOOLS, emitTaskInput, logMetricInput, closeTaskInput, declareNeedInput } from "./tools";
-import { writeNeed, writeTask } from "./task-writer";
+import { SPECIALIST_TOOLS, logAssignmentInput, logMetricInput } from "./tools";
 import { SPECIALISTS, isSpecialist, type SpecialistName } from "./specialists";
 import { buildContext, today } from "./context";
-import { replan } from "@/core/replan";
 import { hm, type IsoDate } from "@/core/types";
 import type { GemSeed } from "@/data/gems";
 
@@ -262,7 +260,6 @@ export async function runGem(
   const systemPrompt = `${spec.systemPrompt}\n\n---\n\n## This gem: ${gem.label}\n\n${gem.instructions ?? ""}${memoryBlock}`;
 
   const actions: string[] = [];
-  let poolChanged = false;
   let reply = "";
 
   try {
@@ -307,17 +304,26 @@ export async function runGem(
         try {
           let out: string;
 
-          if (call.name === "emit_task") {
-            const parsed = emitTaskInput.parse(call.input);
-            const written = await writeTask(parsed, agent, `gem:${gem.key}`);
-            poolChanged = true;
-            out = written.message;
-            actions.push(out);
-          } else if (call.name === "declare_need") {
-            const parsed = declareNeedInput.parse(call.input);
-            const written = await writeNeed(parsed, agent, gem.key);
-            out = written.message;
-            if (written.created) actions.push(`Will ask you: ${parsed.question}`);
+          if (call.name === "log_assignment") {
+            const parsed = logAssignmentInput.parse(call.input);
+            const course = gem.courseCode
+              ? (await db.select().from(courses).where(eq(courses.code, gem.courseCode)).limit(1))[0]
+              : undefined;
+
+            if (!course) {
+              out = "This gem is not tied to a course, so there is nowhere to file it.";
+            } else {
+              await db.insert(assignments).values({
+                courseId: course.id,
+                title: parsed.title,
+                kind: parsed.kind,
+                dueDate: parsed.dueDate ?? null,
+                estimatedMin: parsed.estimatedMin,
+                notes: parsed.notes ?? null,
+              });
+              out = `Filed "${parsed.title}"${parsed.dueDate ? ` (due ${parsed.dueDate})` : ""}.`;
+              actions.push(out);
+            }
           } else if (call.name === "log_metric") {
             const parsed = logMetricInput.parse(call.input);
             await db.insert(metrics).values({
@@ -327,16 +333,6 @@ export async function runGem(
               unit: parsed.unit ?? null,
             });
             out = `Logged ${parsed.kind} ${parsed.value}${parsed.unit ?? ""}.`;
-            actions.push(out);
-          } else if (call.name === "close_task") {
-            const parsed = closeTaskInput.parse(call.input);
-            const updated = await db
-              .update(tasks)
-              .set({ status: parsed.status })
-              .where(eq(tasks.id, parsed.taskId))
-              .returning({ title: tasks.title });
-            poolChanged = true;
-            out = updated[0] ? `Marked "${updated[0].title}" ${parsed.status}.` : "No such task.";
             actions.push(out);
           } else if (call.name === "remember") {
             const parsed = rememberInput.parse(call.input);
@@ -377,9 +373,7 @@ export async function runGem(
   }
   await db.update(conversations).set({ updatedAt: new Date() }).where(eq(conversations.id, conversationId));
 
-  if (poolChanged) await replan(date);
-
-  return { text: reply, actions, replanned: poolChanged };
+  return { text: reply, actions, replanned: false };
 }
 
 /**
