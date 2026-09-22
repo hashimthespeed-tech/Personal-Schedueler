@@ -30,6 +30,32 @@ export const goals = pgTable("goals", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
+/** V2 supports multiple measurable goals in each life area. Legacy goals stay intact. */
+export const goalRecords = pgTable("goal_records_v2", {
+  id: serial("id").primaryKey(),
+  category: text("category").notNull(),
+  title: text("title").notNull(),
+  kind: text("kind").notNull(), // finite | ongoing
+  measure: text("measure").notNull(), // sum | latest | daily-number | daily-check
+  target: real("target").notNull(),
+  targetMax: real("target_max"),
+  comparison: text("comparison").notNull(), // at-least | at-most | range
+  unit: text("unit").notNull(),
+  startValue: real("start_value"),
+  allowedMisses: integer("allowed_misses"),
+  createdOn: date("created_on").notNull(),
+  completedOn: date("completed_on"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (t) => [index("goal_records_category_idx").on(t.category, t.completedOn)]);
+
+export const goalEntries = pgTable("goal_entries_v2", {
+  id: serial("id").primaryKey(),
+  goalId: integer("goal_id").notNull().references(() => goalRecords.id),
+  onDate: date("on_date").notNull(),
+  value: real("value").notNull(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (t) => [uniqueIndex("goal_entries_goal_date_idx").on(t.goalId, t.onDate)]);
+
 export const courses = pgTable("courses", {
   id: serial("id").primaryKey(),
   code: text("code").notNull(),
