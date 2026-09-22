@@ -24,6 +24,9 @@ const EXPECTED: Record<string, string[]> = {
   day_adjustments: ["on_date", "extra_school_hour"],
   assignments: ["course_id", "title", "due_date", "status"],
   check_ins: ["wake_min", "bedtime_min"],
+  scheduled_tasks_v2: ["on_date", "title", "status", "duration_min"],
+  goal_records_v2: ["category", "title", "kind", "target", "completed_on"],
+  goal_entries_v2: ["goal_id", "on_date", "value"],
 };
 
 export async function checkSchema(): Promise<SchemaStatus> {

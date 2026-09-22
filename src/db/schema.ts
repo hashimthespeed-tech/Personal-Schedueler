@@ -56,6 +56,19 @@ export const goalEntries = pgTable("goal_entries_v2", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
 }, (t) => [uniqueIndex("goal_entries_goal_date_idx").on(t.goalId, t.onDate)]);
 
+/** A dated task occurrence. Moving one keeps its old row as history and creates a new occurrence. */
+export const scheduledTasks = pgTable("scheduled_tasks_v2", {
+  id: serial("id").primaryKey(),
+  title: text("title").notNull(),
+  onDate: date("on_date").notNull(),
+  durationMin: integer("duration_min").notNull(),
+  startMin: integer("start_min"), // null means an untimed task, especially useful on weekends
+  kind: text("kind").notNull().default("personal"), // school | personal
+  status: text("status").notNull().default("planned"), // planned | done | moved | cancelled
+  movedToDate: date("moved_to_date"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (t) => [index("scheduled_tasks_date_idx").on(t.onDate, t.status)]);
+
 export const courses = pgTable("courses", {
   id: serial("id").primaryKey(),
   code: text("code").notNull(),
