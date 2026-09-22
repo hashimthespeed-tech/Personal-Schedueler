@@ -3,7 +3,7 @@ import { and, eq } from "drizzle-orm";
 import { DateTime } from "luxon";
 import { z } from "zod";
 import { db } from "@/db/index";
-import { scheduledTasks } from "@/db/schema";
+import { assignments, scheduledTasks } from "@/db/schema";
 import { getSession } from "@/lib/auth";
 import { today } from "@/core/clock";
 import { LA_MESA } from "@/core/prayer";
@@ -92,8 +92,15 @@ export async function POST(request: Request) {
   if (data.action === "mark") {
     const [updated] = await db.update(scheduledTasks).set({ status: data.status })
       .where(and(eq(scheduledTasks.id, data.id), eq(scheduledTasks.status, data.status === "done" ? "planned" : "done")))
-      .returning({ id: scheduledTasks.id });
+      .returning({ id: scheduledTasks.id, assignmentId: scheduledTasks.assignmentId });
     if (!updated) return error("Task changed or was not found. Refresh and try again.", 409);
+    if (updated.assignmentId !== null) {
+      const sessions = await db.select({ status: scheduledTasks.status }).from(scheduledTasks)
+        .where(eq(scheduledTasks.assignmentId, updated.assignmentId));
+      const active = sessions.filter((item) => item.status !== "moved" && item.status !== "cancelled");
+      await db.update(assignments).set({ status: active.length > 0 && active.every((item) => item.status === "done") ? "done" : "open" })
+        .where(eq(assignments.id, updated.assignmentId));
+    }
     return NextResponse.json({ ok: true });
   }
 
@@ -101,6 +108,13 @@ export async function POST(request: Request) {
     const [source] = await db.select().from(scheduledTasks).where(eq(scheduledTasks.id, data.id)).limit(1);
     if (!source || source.status !== "planned") return error("Only unfinished tasks can be moved.", 409);
     if (data.toDate === source.onDate) return error("Choose a different day.");
+    if (source.workRole === "refresher") return error("The test refresher must stay on the day before the test.");
+    if (source.workRole === "study" && source.dueDate && source.assignmentId) {
+      const [parent] = await db.select({ kind: assignments.kind }).from(assignments).where(eq(assignments.id, source.assignmentId)).limit(1);
+      if (parent?.kind === "test" && DateTime.fromISO(source.dueDate).minus({ days: 1 }).toISODate() === data.toDate) {
+        return error("Test study time must be earlier than the refresher day.");
+      }
+    }
     const placementError = validatePlacement(data.toDate, data.mode, source.dueDate ?? undefined);
     if (placementError) return error(placementError);
     const request: QuickAddRequest = { title: source.title, durationMin: source.durationMin,
@@ -118,7 +132,8 @@ export async function POST(request: Request) {
       if (!moved) return null;
       const [newTask] = await tx.insert(scheduledTasks).values({ title: source.title, onDate: data.toDate,
         durationMin: source.durationMin, startMin: chosen.start, dueDate: source.dueDate,
-        kind: source.kind, status: "planned", approvedCosts: chosen.costs }).returning({ id: scheduledTasks.id });
+        kind: source.kind, status: "planned", approvedCosts: chosen.costs,
+        assignmentId: source.assignmentId, workRole: source.workRole }).returning({ id: scheduledTasks.id });
       return newTask;
     });
     if (!result) return error("Task changed while moving. Refresh and try again.", 409);

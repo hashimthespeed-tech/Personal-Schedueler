@@ -26,7 +26,14 @@ export function buildDayFrame(date: string, options: DayFrameOptions): DayTempla
   const blocks: PlanBlock[] = [];
   const schoolDay = date >= TERM_S1.start && date <= TERM_S1.end && localDate.weekday <= 5;
   if (schoolDay) {
-    for (const commitment of fixedCommitmentsFor(localDate.weekday)) {
+    const commitments = fixedCommitmentsFor(localDate.weekday);
+    const commute = commitments.find((commitment) => commitment.id.endsWith("commute-am"));
+    const wake = SLEEP_TIMES[options.sleepMode].wake;
+    if (commute && commute.start > wake) {
+      blocks.push({ id: "morning-prep", title: "Morning preparation", start: wake,
+        end: Math.min(commute.start, wake + 45), policy: "protected" });
+    }
+    for (const commitment of commitments) {
       blocks.push(commitment.workable
         ? {
             id: commitment.id,

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { planSchoolwork, suggestWorkdays, type PlanningDay } from "../src/core/schoolwork";
+import { planSchoolwork, recommendWorkdays, suggestWorkdays, type PlanningDay } from "../src/core/schoolwork";
 
 function available(date: string, start = 960, end = 1320): PlanningDay {
   return {
@@ -12,6 +12,28 @@ function available(date: string, start = 960, end = 1320): PlanningDay {
 }
 
 describe("schoolwork planning", () => {
+  it("recommends the latest available days before an assignment deadline", () => {
+    const options = [available("2026-09-21"), available("2026-09-22"), available("2026-09-23")];
+    expect(recommendWorkdays(options, "2026-09-24", 180, "assignment")).toEqual(["2026-09-22", "2026-09-23"]);
+  });
+
+  it("recommends two test days with a day-before refresher", () => {
+    const options = [available("2026-09-21"), available("2026-09-22"), available("2026-09-23")];
+    expect(recommendWorkdays(options, "2026-09-24", 120, "test")).toEqual(["2026-09-22", "2026-09-23"]);
+  });
+
+  it("uses two separate open windows without exceeding the daily workload cap", () => {
+    const day = available("2026-09-21", 960, 1090);
+    day.template.blocks.push({ id: "meeting", title: "Meeting", start: 1020, end: 1030, policy: "fixed" });
+    expect(suggestWorkdays([day], "2026-09-22")).toEqual([{ date: "2026-09-21", availableMin: 120 }]);
+    const plan = planSchoolwork({ id: "essay", title: "Essay", kind: "assignment", totalMin: 120,
+      dueDate: "2026-09-22", selectedDates: ["2026-09-21"] }, [day]);
+    expect(plan).toMatchObject({ ok: true, sessions: [
+      { date: "2026-09-21", minutes: 60, placement: { start: 960, end: 1020 } },
+      { date: "2026-09-21", minutes: 60, placement: { start: 1030, end: 1090 } },
+    ] });
+  });
+
   it("suggests only days before the deadline, with usable minutes", () => {
     const days = [available("2026-09-21"), available("2026-09-22", 960, 990), available("2026-09-23")];
     expect(suggestWorkdays(days, "2026-09-23")).toEqual([
@@ -29,6 +51,22 @@ describe("schoolwork planning", () => {
       { date: "2026-09-21", minutes: 120 },
       { date: "2026-09-22", minutes: 30 },
     ] });
+  });
+
+  it("treats estimated minutes as one total across the selected days", () => {
+    const request = { id: "homework", title: "Homework", kind: "assignment" as const,
+      totalMin: 120, dueDate: "2026-09-23", selectedDates: ["2026-09-21", "2026-09-22"] };
+    const even = planSchoolwork(request, [available("2026-09-21"), available("2026-09-22")]);
+    expect(even).toMatchObject({ ok: true, sessions: [
+      { date: "2026-09-21", minutes: 60 }, { date: "2026-09-22", minutes: 60 },
+    ] });
+    if (even.ok) expect(even.sessions.reduce((sum, session) => sum + session.minutes, 0)).toBe(120);
+
+    const uneven = planSchoolwork(request, [available("2026-09-21", 960, 990), available("2026-09-22")]);
+    expect(uneven).toMatchObject({ ok: true, sessions: [
+      { date: "2026-09-21", minutes: 30 }, { date: "2026-09-22", minutes: 90 },
+    ] });
+    if (uneven.ok) expect(uneven.sessions.reduce((sum, session) => sum + session.minutes, 0)).toBe(120);
   });
 
   it("rejects an overloaded selection and reports the shortage", () => {

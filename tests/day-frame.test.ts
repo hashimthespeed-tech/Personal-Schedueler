@@ -9,6 +9,9 @@ describe("day frames from the real weekly schedule", () => {
     expect(day.blocks.find((block) => block.id === "1-p7")).toMatchObject({
       start: 886, end: 936, policy: "flexible", cost: "friend", canUseFor: "school",
     });
+    expect(day.blocks.find((block) => block.id === "morning-prep")).toMatchObject({
+      start: 450, end: 485, policy: "protected",
+    });
     expect(day.blocks.find((block) => block.id === "after-school-prayer")).toMatchObject({
       start: 955, end: 1000, policy: "protected",
     });

@@ -27,22 +27,29 @@ export type SchoolworkPlan =
   | { ok: true; sessions: WorkSession[] }
   | { ok: false; reason: "invalid-days" | "test-days" | "invalid-duration" | "insufficient-time"; shortfallMin?: number };
 
-const MAX_SESSION_MIN = 120;
+const MAX_DAILY_SCHOOL_MIN = 120;
 
-/** Longest uninterrupted clean session; friend time and other flexible time remain untouched. */
-export function cleanCapacity(day: PlanningDay): number {
+function cleanWindows(day: PlanningDay): { start: number; end: number }[] {
   const end = day.template.bedtime;
   let cursor = Math.max(day.notBefore, day.template.wake);
-  let longest = 0;
-  const occupied = [...day.template.blocks].sort((a, b) => a.start - b.start);
-  for (const block of occupied) {
+  const windows: { start: number; end: number }[] = [];
+  for (const block of [...day.template.blocks].sort((a, b) => a.start - b.start)) {
     if (block.end <= cursor) continue;
-    if (block.start > cursor) longest = Math.max(longest, Math.min(block.start, end) - cursor);
+    if (block.start > cursor) {
+      const next = Math.min(block.start, end);
+      if (next - cursor >= 5) windows.push({ start: cursor, end: next });
+    }
     cursor = Math.max(cursor, block.end);
     if (cursor >= end) break;
   }
-  longest = Math.max(longest, end - cursor);
-  return Math.max(0, Math.min(MAX_SESSION_MIN, longest));
+  if (end - cursor >= 5) windows.push({ start: cursor, end });
+  return windows;
+}
+
+/** Total clean time, capped so one selected day is not overloaded. */
+export function cleanCapacity(day: PlanningDay): number {
+  const total = cleanWindows(day).reduce((sum, window) => sum + window.end - window.start, 0);
+  return Math.min(MAX_DAILY_SCHOOL_MIN, Math.floor(total / 5) * 5);
 }
 
 export function suggestWorkdays(days: PlanningDay[], dueDate: string): { date: string; availableMin: number }[] {
@@ -52,17 +59,43 @@ export function suggestWorkdays(days: PlanningDay[], dueDate: string): { date: s
     .sort((a, b) => a.date.localeCompare(b.date));
 }
 
-function place(day: PlanningDay, request: SchoolworkRequest, minutes: number, role: WorkSession["role"]): WorkSession | null {
-  const placement = proposePlacements(day.template, {
-    id: request.id,
-    title: request.title,
-    durationMin: minutes,
-    kind: "school",
-    mode: "auto",
-    notBefore: day.notBefore,
-  }).find((candidate) => candidate.costs.length === 0);
-  if (!placement) return null;
-  return { date: day.template.date, minutes, role, placement };
+/** Default suggestion, still editable: use the latest days with enough clean capacity. */
+export function recommendWorkdays(days: PlanningDay[], dueDate: string, totalMin: number,
+  kind: SchoolworkRequest["kind"]): string[] {
+  const options = suggestWorkdays(days, dueDate).filter((day) => day.availableMin >= 15);
+  if (kind === "test") {
+    const dayBefore = DateTime.fromISO(dueDate).minus({ days: 1 }).toISODate();
+    const refresherMin = Math.min(30, Math.max(15, Math.round(totalMin * 0.25 / 5) * 5));
+    const refresher = options.find((day) => day.date === dayBefore && day.availableMin >= refresherMin);
+    const study = [...options].reverse().find((day) => day.date < (dayBefore ?? "") && day.availableMin >= totalMin - refresherMin);
+    return refresher && study ? [study.date, refresher.date] : [];
+  }
+  let remaining = totalMin;
+  const chosen: string[] = [];
+  for (const option of [...options].reverse()) {
+    if (remaining <= 0) break;
+    chosen.push(option.date);
+    remaining -= option.availableMin;
+  }
+  return remaining <= 0 ? chosen.reverse() : [];
+}
+
+function place(day: PlanningDay, request: SchoolworkRequest, minutes: number, role: WorkSession["role"]): WorkSession[] | null {
+  let remaining = minutes;
+  const sessions: WorkSession[] = [];
+  for (const window of cleanWindows(day)) {
+    if (remaining === 0) break;
+    const amount = Math.min(remaining, Math.floor((window.end - window.start) / 5) * 5);
+    if (amount < 5) continue;
+    const placement = proposePlacements(day.template, {
+      id: request.id, title: request.title, durationMin: amount,
+      kind: "school", mode: "fixed", at: window.start,
+    }).find((candidate) => candidate.costs.length === 0);
+    if (!placement) return null;
+    sessions.push({ date: day.template.date, minutes: amount, role, placement });
+    remaining -= amount;
+  }
+  return remaining === 0 ? sessions : null;
 }
 
 /** Preview work blocks on the chosen days without writing to a schedule. */
@@ -89,10 +122,10 @@ export function planSchoolwork(request: SchoolworkRequest, days: PlanningDay[]):
     const shortfallMin = Math.max(0, firstMin - cleanCapacity(first)) +
       Math.max(0, refresherMin - cleanCapacity(refresher));
     if (shortfallMin > 0) return { ok: false, reason: "insufficient-time", shortfallMin };
-    const studySession = place(first, request, firstMin, "study");
-    const refresherSession = place(refresher, request, refresherMin, "refresher");
-    if (!studySession || !refresherSession) return { ok: false, reason: "insufficient-time", shortfallMin: request.totalMin };
-    return { ok: true, sessions: [studySession, refresherSession] };
+    const studySessions = place(first, request, firstMin, "study");
+    const refresherSessions = place(refresher, request, refresherMin, "refresher");
+    if (!studySessions || !refresherSessions) return { ok: false, reason: "insufficient-time", shortfallMin: request.totalMin };
+    return { ok: true, sessions: [...studySessions, ...refresherSessions] };
   }
 
   const selected = dates.map((date) => byDate.get(date)!);
@@ -120,9 +153,9 @@ export function planSchoolwork(request: SchoolworkRequest, days: PlanningDay[]):
   for (let i = 0; i < selected.length; i++) {
     const minutes = allocations[i]!;
     if (minutes === 0) continue;
-    const session = place(selected[i]!, request, minutes, "study");
-    if (!session) return { ok: false, reason: "insufficient-time", shortfallMin: minutes };
-    sessions.push(session);
+    const placed = place(selected[i]!, request, minutes, "study");
+    if (!placed) return { ok: false, reason: "insufficient-time", shortfallMin: minutes };
+    sessions.push(...placed);
   }
   return { ok: true, sessions };
 }

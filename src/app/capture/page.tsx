@@ -1,16 +1,16 @@
 import { requireSession } from "@/lib/auth";
-import { CaptureForm } from "@/components/CaptureForm";
+import { SchoolworkPlanner } from "@/components/SchoolworkPlanner";
+import { schoolworkPreview } from "@/data/schoolwork-preview";
+import { today } from "@/core/clock";
 
 export const dynamic = "force-dynamic";
 
-export default async function CapturePage() {
+export default async function CapturePage({ searchParams }: { searchParams: Promise<{ preview?: string }> }) {
+  if (process.env.NODE_ENV === "development" && (await searchParams).preview === "1") {
+    return <><p className="dim pt-5 text-xs">Design preview · sample data</p>
+      <SchoolworkPlanner initialDate={schoolworkPreview.date} previewData={schoolworkPreview} /></>;
+  }
   await requireSession();
 
-  return (
-    <div className="pt-6">
-      <h1 className="text-2xl font-semibold tracking-tight">What's due</h1>
-      <p className="dim text-sm">Off the whiteboard, before it's gone.</p>
-      <CaptureForm />
-    </div>
-  );
+  return <SchoolworkPlanner initialDate={today()} />;
 }

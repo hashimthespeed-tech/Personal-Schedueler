@@ -64,6 +64,8 @@ export const scheduledTasks = pgTable("scheduled_tasks_v2", {
   durationMin: integer("duration_min").notNull(),
   startMin: integer("start_min"), // null means an untimed task, especially useful on weekends
   dueDate: date("due_date"),
+  assignmentId: integer("assignment_id").references(() => assignments.id),
+  workRole: text("work_role"), // study | refresher
   kind: text("kind").notNull().default("personal"), // school | personal
   status: text("status").notNull().default("planned"), // planned | done | moved | cancelled
   movedToDate: date("moved_to_date"),
