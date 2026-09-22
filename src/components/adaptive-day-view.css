@@ -1,0 +1,48 @@
+.adaptive-day { padding: 20px; border: 1px solid var(--line); border-radius: 21px; background: var(--card); }
+.adaptive-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+.adaptive-eyebrow { margin: 0 0 5px; color: var(--color-school); font-size: 10px; font-weight: 800; letter-spacing: .16em; }
+.adaptive-head h2 { margin: 0; font-size: 25px; letter-spacing: -.045em; line-height: 1.12; }
+.adaptive-head p:not(.adaptive-eyebrow) { margin: 7px 0 0; color: var(--dim); font-size: 13px; }
+.adaptive-add { padding: 9px 15px; border: 0; border-radius: 10px; background: var(--fg); color: var(--bg); font-size: 13px; font-weight: 700; white-space: nowrap; cursor: pointer; }
+.adaptive-anchor { margin: 17px 0 2px; padding: 10px 12px; border-radius: 10px; background: color-mix(in srgb, var(--color-deen) 9%, var(--card)); color: var(--color-deen); font-size: 12px; line-height: 1.35; }
+.adaptive-empty { margin-top: 19px; padding: 20px 12px; border: 1px dashed var(--line); border-radius: 12px; color: var(--dim); text-align: center; font-size: 13px; }
+.adaptive-task-list { margin-top: 16px; }
+.adaptive-task { display: flex; align-items: center; gap: 12px; padding: 13px 0; border-bottom: 1px solid var(--line); }
+.adaptive-task:last-child { border-bottom: 0; }
+.adaptive-check { flex: none; width: 29px; height: 29px; padding: 0; border: 1.5px solid #aabcb1; border-radius: 9px; background: transparent; color: #fff; font-size: 17px; font-weight: 700; cursor: pointer; }
+.adaptive-task.is-done .adaptive-check { border-color: #1e9259; background: #1e9259; }
+.adaptive-task-main { display: flex; flex: 1; flex-direction: column; gap: 3px; min-width: 0; }
+.adaptive-task-main strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; font-weight: 650; }
+.adaptive-task.is-done .adaptive-task-main strong { color: var(--dim); text-decoration: line-through; }
+.adaptive-task-main span { color: var(--dim); font-size: 11px; }
+.adaptive-move { flex: none; padding: 6px 8px; border: 0; background: transparent; color: var(--color-school); font-size: 12px; font-weight: 650; cursor: pointer; }
+.adaptive-overdue { margin-top: 17px; padding: 1px 14px 4px; border: 1px solid color-mix(in srgb, var(--color-physique) 24%, var(--line)); border-radius: 13px; background: color-mix(in srgb, var(--color-physique) 4%, var(--card)); }
+.adaptive-overdue h3 { display: flex; justify-content: space-between; margin: 14px 0 3px; color: var(--color-physique); font-size: 12px; font-weight: 750; }
+.adaptive-error { margin: 12px 0; color: var(--color-physique); font-size: 12px; }
+.adaptive-backdrop { position: fixed; z-index: 50; inset: 0; display: flex; justify-content: center; align-items: flex-end; padding: 14px; background: rgba(13, 22, 18, .57); }
+.adaptive-modal { width: min(100%, 510px); max-height: min(90vh, 820px); overflow-y: auto; padding: 20px; border: 1px solid var(--line); border-radius: 20px; background: var(--card); box-shadow: 0 24px 70px rgba(0, 0, 0, .18); }
+.adaptive-modal-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.adaptive-modal-head h2 { margin: 0 0 18px; font-size: 24px; letter-spacing: -.04em; }
+.adaptive-modal-head > button { width: 30px; height: 30px; border: 0; background: transparent; color: var(--dim); font-size: 26px; cursor: pointer; }
+.adaptive-form { display: flex; flex-direction: column; gap: 13px; }
+.adaptive-form label { display: flex; flex-direction: column; gap: 6px; color: var(--dim); font-size: 11px; font-weight: 700; }
+.adaptive-form input, .adaptive-form select { width: 100%; min-height: 42px; padding: 9px 11px; border: 1px solid var(--line); border-radius: 10px; outline-color: var(--color-school); background: var(--bg); color: var(--fg); font-size: 14px; font-weight: 500; }
+.adaptive-form-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.adaptive-modes { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.adaptive-modes button { min-height: 43px; padding: 6px; border: 1px solid var(--line); border-radius: 9px; background: var(--bg); color: var(--dim); font-size: 11px; font-weight: 700; cursor: pointer; }
+.adaptive-modes button.selected { border-color: var(--color-school); background: color-mix(in srgb, var(--color-school) 9%, var(--card)); color: var(--color-school); }
+.adaptive-hint { margin: 0; padding: 9px 11px; border-radius: 9px; background: color-mix(in srgb, var(--color-physique) 8%, var(--card)); color: var(--color-physique); font-size: 12px; }
+.adaptive-preview-button { min-height: 43px; margin-top: 2px; border: 0; border-radius: 10px; background: var(--fg); color: var(--bg); font-size: 13px; font-weight: 750; cursor: pointer; }
+.adaptive-preview-button:disabled, .adaptive-option button:disabled { opacity: .5; cursor: wait; }
+.adaptive-options { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--line); }
+.adaptive-options h3 { margin: 0 0 10px; font-size: 15px; }
+.adaptive-options > p { color: var(--dim); font-size: 12px; }
+.adaptive-option { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--line); }
+.adaptive-option:last-child { border: 0; }
+.adaptive-option > div { display: flex; flex-direction: column; gap: 4px; }
+.adaptive-option strong { font-size: 13px; }
+.adaptive-option span { color: var(--color-deen); font-size: 11px; line-height: 1.35; }
+.adaptive-option span.has-cost { color: var(--color-physique); }
+.adaptive-option button { flex: none; padding: 8px 11px; border: 0; border-radius: 8px; background: var(--color-school); color: #fff; font-size: 11px; font-weight: 750; cursor: pointer; }
+@media (min-width: 700px) { .adaptive-backdrop { align-items: center; } }
+@media (max-width: 480px) { .adaptive-day { padding: 17px 16px; border-radius: 18px; } .adaptive-head h2 { font-size: 23px; } .adaptive-modal { padding: 18px 16px; border-radius: 18px; } }

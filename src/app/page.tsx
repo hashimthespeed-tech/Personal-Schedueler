@@ -1,11 +1,12 @@
 import { requireSession } from "@/lib/auth";
 import { checkSchema } from "@/lib/schema-guard";
 import { SetupNeeded } from "@/components/SetupNeeded";
-import { DayView } from "@/components/DayView";
+import { AdaptiveDayView } from "@/components/AdaptiveDayView";
 import { SleepCard } from "@/components/SleepCard";
 import { today } from "@/core/clock";
 import { DailyCompletionGraph } from "@/components/DailyCompletionGraph";
 import { completionPreview } from "@/data/completion-preview";
+import { tasksPreview } from "@/data/tasks-preview";
 
 export const dynamic = "force-dynamic";
 
@@ -21,6 +22,7 @@ export default async function TodayPage({ searchParams }: { searchParams: Promis
     return <div className="space-y-5 pt-6">
       <p className="dim text-xs">Design preview · sample data</p>
       <DailyCompletionGraph previewData={completionPreview} />
+      <AdaptiveDayView initialDate={tasksPreview.date} previewData={{ ok: true, ...tasksPreview, tasks: [...tasksPreview.tasks] }} />
     </div>;
   }
   await requireSession();
@@ -33,8 +35,8 @@ export default async function TodayPage({ searchParams }: { searchParams: Promis
   return (
     <div className="space-y-5 pt-6">
       <DailyCompletionGraph />
+      <AdaptiveDayView initialDate={date} />
       <SleepCard date={date} />
-      <DayView initialDate={date} />
     </div>
   );
 }

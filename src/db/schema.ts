@@ -63,9 +63,11 @@ export const scheduledTasks = pgTable("scheduled_tasks_v2", {
   onDate: date("on_date").notNull(),
   durationMin: integer("duration_min").notNull(),
   startMin: integer("start_min"), // null means an untimed task, especially useful on weekends
+  dueDate: date("due_date"),
   kind: text("kind").notNull().default("personal"), // school | personal
   status: text("status").notNull().default("planned"), // planned | done | moved | cancelled
   movedToDate: date("moved_to_date"),
+  approvedCosts: jsonb("approved_costs").$type<{ type: string; lostMin: number; title?: string }[]>(),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 }, (t) => [index("scheduled_tasks_date_idx").on(t.onDate, t.status)]);
 

@@ -38,7 +38,7 @@ export function NavBar() {
 
   return (
     <nav
-      className="fixed inset-x-0 bottom-0 border-t backdrop-blur"
+      className="z-30 shrink-0 border-t backdrop-blur"
       style={{
         borderColor: "var(--line)",
         background: "color-mix(in srgb, var(--bg) 88%, transparent)",

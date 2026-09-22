@@ -6,5 +6,5 @@
  * inlined because the padding is shared by every page and belongs in one place.
  */
 export function Shell({ children }: { children: React.ReactNode }) {
-  return <main className="mx-auto w-full max-w-lg px-4 pb-28 lg:max-w-2xl">{children}</main>;
+  return <main className="mx-auto w-full max-w-lg min-h-0 flex-1 overflow-y-auto px-4 pb-6 lg:max-w-2xl">{children}</main>;
 }
