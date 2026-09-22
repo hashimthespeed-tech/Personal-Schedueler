@@ -190,7 +190,9 @@ export function consistency(
         caloriesComplete = false;
         break;
       }
-      if (mealMark.status === "done") totalCalories += mealMark.calories;
+      if (mealMark.status === "done" && mealMark.calories !== null) {
+        totalCalories += mealMark.calories;
+      }
     }
     dailyCalories.push({ date, calories: caloriesComplete ? totalCalories : null });
   }
