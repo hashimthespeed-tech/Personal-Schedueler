@@ -8,7 +8,7 @@ import { getSession } from "@/lib/auth";
 import { today } from "@/core/clock";
 import { LA_MESA } from "@/core/prayer";
 import { buildDayFrame } from "@/core/day-frame";
-import { previewTask, type ExistingTask, type QuickAddRequest, type TaskOption } from "@/core/task-plan";
+import { previewTask, previewTaskEdit, type ExistingTask, type QuickAddRequest, type TaskOption } from "@/core/task-plan";
 
 export const dynamic = "force-dynamic";
 
@@ -30,6 +30,12 @@ const body = z.union([
     mode: z.enum(["auto", "fixed", "past"]), at: z.number().int().min(0).max(1439).optional() }),
   z.object({ action: z.literal("approve-move"), id: z.number().int().positive(), toDate: iso,
     mode: z.enum(["auto", "fixed", "past"]), at: z.number().int().min(0).max(1439).optional(), chosen: z.unknown() }),
+  z.object({ action: z.literal("preview-edit"), id: z.number().int().positive(), toDate: iso,
+    durationMin: z.number().int().min(5).max(480), mode: z.enum(["auto", "fixed"]),
+    at: z.number().int().min(0).max(1439).optional() }),
+  z.object({ action: z.literal("approve-edit"), id: z.number().int().positive(), toDate: iso,
+    durationMin: z.number().int().min(5).max(480), mode: z.enum(["auto", "fixed"]),
+    at: z.number().int().min(0).max(1439).optional(), chosen: z.unknown() }),
 ]);
 
 function validDate(value: string) {
@@ -59,6 +65,14 @@ async function optionsFor(date: string, request: QuickAddRequest) {
   const frame = buildDayFrame(date, { sleepMode: "current" });
   const notBefore = date === today() ? Math.max(frame.wake, currentMinute()) : frame.wake;
   return previewTask(frame, request, asExisting(rows), notBefore);
+}
+
+async function editOptionsFor(source: TaskRow, date: string, request: QuickAddRequest) {
+  const rows = await db.select().from(scheduledTasks).where(eq(scheduledTasks.onDate, date));
+  const frame = buildDayFrame(date, { sleepMode: "current" });
+  const notBefore = date === today() ? Math.max(frame.wake, currentMinute()) : frame.wake;
+  return date === source.onDate ? previewTaskEdit(frame, request, asExisting(rows), String(source.id), notBefore) :
+    previewTask(frame, request, asExisting(rows), notBefore);
 }
 
 function chosenOption(options: TaskOption[], chosen: unknown): TaskOption | undefined {
@@ -102,6 +116,53 @@ export async function POST(request: Request) {
         .where(eq(assignments.id, updated.assignmentId));
     }
     return NextResponse.json({ ok: true });
+  }
+
+  if (data.action === "preview-edit" || data.action === "approve-edit") {
+    const [source] = await db.select().from(scheduledTasks).where(eq(scheduledTasks.id, data.id)).limit(1);
+    if (!source || source.status !== "planned") return error("Only unfinished tasks can be edited.", 409);
+    if (source.workRole === "refresher" && data.toDate !== source.onDate) {
+      return error("The test refresher must stay on the day before the test.");
+    }
+    if (source.workRole === "study" && source.dueDate && source.assignmentId) {
+      const [parent] = await db.select({ kind: assignments.kind }).from(assignments).where(eq(assignments.id, source.assignmentId)).limit(1);
+      if (parent?.kind === "test" && DateTime.fromISO(source.dueDate).minus({ days: 1 }).toISODate() === data.toDate) {
+        return error("Test study time must be earlier than the refresher day.");
+      }
+    }
+    const placementError = validatePlacement(data.toDate, data.mode, source.dueDate ?? undefined);
+    if (placementError) return error(placementError);
+    const request: QuickAddRequest = { title: source.title, durationMin: data.durationMin,
+      kind: source.kind as QuickAddRequest["kind"], mode: data.mode,
+      ...(data.at === undefined ? {} : { at: data.at }),
+      urgentDueTomorrow: !!source.dueDate && DateTime.fromISO(source.dueDate).minus({ days: 1 }).toISODate() === data.toDate };
+    const options = await editOptionsFor(source, data.toDate, request);
+    if (data.action === "preview-edit") return NextResponse.json({ ok: true, options });
+    const chosen = chosenOption(options, data.chosen);
+    if (!chosen) return error("The available times changed. Please review the options again.", 409);
+
+    if (data.toDate === source.onDate) {
+      const [updated] = await db.update(scheduledTasks).set({ durationMin: data.durationMin,
+        startMin: chosen.start, approvedCosts: chosen.costs })
+        .where(and(eq(scheduledTasks.id, source.id), eq(scheduledTasks.status, "planned")))
+        .returning({ id: scheduledTasks.id });
+      if (!updated) return error("Task changed while editing. Refresh and try again.", 409);
+      return NextResponse.json({ ok: true, id: updated.id });
+    }
+
+    const result = await db.transaction(async (tx) => {
+      const [moved] = await tx.update(scheduledTasks).set({ status: "moved", movedToDate: data.toDate })
+        .where(and(eq(scheduledTasks.id, source.id), eq(scheduledTasks.status, "planned")))
+        .returning({ id: scheduledTasks.id });
+      if (!moved) return null;
+      const [newTask] = await tx.insert(scheduledTasks).values({ title: source.title, onDate: data.toDate,
+        durationMin: data.durationMin, startMin: chosen.start, dueDate: source.dueDate,
+        kind: source.kind, status: "planned", approvedCosts: chosen.costs,
+        assignmentId: source.assignmentId, workRole: source.workRole }).returning({ id: scheduledTasks.id });
+      return newTask;
+    });
+    if (!result) return error("Task changed while editing. Refresh and try again.", 409);
+    return NextResponse.json({ ok: true, id: result.id });
   }
 
   if (data.action === "preview-move" || data.action === "approve-move") {
