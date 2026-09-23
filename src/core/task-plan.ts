@@ -39,3 +39,9 @@ export function previewTask(day: DayTemplate, request: QuickAddRequest, existing
     costs: proposal.costs, remainingSleepMin: proposal.remainingSleepMin,
   }));
 }
+
+/** Preview an edit while keeping every occurrence except the exact source task as a collision. */
+export function previewTaskEdit(day: DayTemplate, request: QuickAddRequest, existing: ExistingTask[],
+  sourceId: string, notBefore: number): TaskOption[] {
+  return previewTask(day, request, existing.filter((task) => task.id !== sourceId), notBefore);
+}

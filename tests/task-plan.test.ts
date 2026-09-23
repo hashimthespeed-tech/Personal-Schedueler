@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildDayFrame } from "../src/core/day-frame";
-import { previewTask, type ExistingTask } from "../src/core/task-plan";
+import { previewTask, previewTaskEdit, type ExistingTask } from "../src/core/task-plan";
 
 const monday = buildDayFrame("2026-09-21", { sleepMode: "current" });
 const existing: ExistingTask[] = [
@@ -32,5 +32,25 @@ describe("quick-add task preview", () => {
 
   it("refuses a fixed time that has already passed", () => {
     expect(previewTask(monday, { title: "Read", durationMin: 20, kind: "personal", mode: "fixed", at: 990 }, [], 1000)).toEqual([]);
+  });
+
+  it("resizes one occurrence without colliding with its own old duration", () => {
+    const tasks: ExistingTask[] = [
+      { id: "7", title: "Study", start: 1020, end: 1080, status: "planned" },
+      { id: "8", title: "Study", start: 1100, end: 1130, status: "planned" },
+    ];
+    const options = previewTaskEdit(monday,
+      { title: "Study", durationMin: 40, kind: "school", mode: "fixed", at: 1020 }, tasks, "7", 0);
+    expect(options.some((option) => option.start === 1020 && option.end === 1060)).toBe(true);
+  });
+
+  it("still blocks another same-named occurrence by its unique id", () => {
+    const tasks: ExistingTask[] = [
+      { id: "7", title: "Study", start: 1020, end: 1080, status: "planned" },
+      { id: "8", title: "Study", start: 1060, end: 1130, status: "planned" },
+    ];
+    const options = previewTaskEdit(monday,
+      { title: "Study", durationMin: 60, kind: "school", mode: "fixed", at: 1020 }, tasks, "7", 0);
+    expect(options).toEqual([]);
   });
 });
