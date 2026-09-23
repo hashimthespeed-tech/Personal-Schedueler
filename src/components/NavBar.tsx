@@ -17,14 +17,17 @@ import { usePathname } from "next/navigation";
 const PHONE = [
   { href: "/", label: "Today" },
   { href: "/capture", label: "Due" },
+  { href: "/week", label: "Week" },
+  { href: "/goals", label: "Goals" },
   { href: "/stats", label: "Stats" },
 ];
 
 const DESKTOP = [
   { href: "/", label: "Today" },
   { href: "/capture", label: "Due" },
+  { href: "/week", label: "Week" },
+  { href: "/goals", label: "Goals" },
   { href: "/stats", label: "Stats" },
-  { href: "/settings", label: "Settings" },
 ];
 
 function isActive(pathname: string, href: string): boolean {

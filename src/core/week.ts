@@ -30,7 +30,10 @@ export function weekDates(anchor: string): string[] {
 }
 
 export function mergeWeekTimeline(frame: DayTemplate, tasks: WeekTask[]): WeekTimelineEntry[] {
-  const blocks: WeekTimelineEntry[] = frame.blocks.map((block) => ({
+  const schoolPattern = /^\d+-(?:commute-am|p\d+|gap-\d+|practice|commute-pm)$/;
+  const schoolBlocks = frame.blocks.filter((block) => schoolPattern.test(block.id));
+  const displayBlocks = frame.blocks.filter((block) => !schoolPattern.test(block.id));
+  const blocks: WeekTimelineEntry[] = displayBlocks.map((block) => ({
     id: `block-${block.id}`,
     type: "protected",
     title: block.title,
@@ -38,6 +41,13 @@ export function mergeWeekTimeline(frame: DayTemplate, tasks: WeekTask[]): WeekTi
     durationMin: block.end - block.start,
     protected: block.policy !== "flexible",
   }));
+  if (schoolBlocks.length > 0) {
+    const start = Math.min(...schoolBlocks.map((block) => block.start));
+    const end = Math.max(...schoolBlocks.map((block) => block.end));
+    blocks.push({ id: "block-school-day", type: "protected",
+      title: schoolBlocks.some((block) => block.id.endsWith("-practice")) ? "School + wrestling practice" : "School",
+      startMin: start, durationMin: end - start, protected: true });
+  }
   const taskEntries: WeekTimelineEntry[] = tasks.map((task) => ({
     id: `task-${task.id}`,
     type: task.status === "moved" ? "moved" : task.startMin === null ? "overdue" : "task",

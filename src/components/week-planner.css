@@ -1,0 +1,63 @@
+.week-page { display: flex; flex-direction: column; gap: 16px; padding: 24px 0 12px; }
+.week-head { padding: 0 2px; }
+.week-head > p, .week-selected-head p, .week-sheet-head p { margin: 0 0 5px; color: var(--color-school); font-size: 10px; font-weight: 800; letter-spacing: .15em; }
+.week-head h1 { margin: 0; font-size: 35px; line-height: 1.08; letter-spacing: -.055em; }
+.week-head > span { display: block; margin-top: 7px; color: var(--dim); font-size: 13px; }
+.week-days { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 5px; padding: 7px; border: 1px solid var(--line); border-radius: 16px; background: var(--card); }
+.week-days button { position: relative; min-width: 0; min-height: 65px; padding: 7px 2px; border: 0; border-radius: 10px; background: transparent; color: var(--dim); cursor: pointer; }
+.week-days span, .week-days strong, .week-days i { display: block; }
+.week-days span { font-size: 8px; font-weight: 800; }
+.week-days strong { margin-top: 4px; font-size: 14px; }
+.week-days i { height: 8px; color: var(--color-school); font-size: 15px; font-style: normal; line-height: 7px; }
+.week-days button.active { background: color-mix(in srgb, var(--color-school) 10%, var(--card)); color: var(--color-school); }
+.week-timeline { padding: 20px; border: 1px solid var(--line); border-radius: 20px; background: var(--card); }
+.week-selected-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; margin-bottom: 11px; }
+.week-selected-head h2 { margin: 0; font-size: 20px; letter-spacing: -.035em; }
+.week-selected-head > span { flex: none; color: var(--dim); font-size: 10px; font-weight: 750; }
+.week-list { display: flex; flex-direction: column; }
+.week-entry { display: grid; grid-template-columns: 62px 1fr; gap: 10px; align-items: center; min-height: 57px; border: 0; border-bottom: 1px solid var(--line); background: transparent; color: var(--fg); text-align: left; }
+.week-entry time { color: var(--dim); font-size: 10px; font-weight: 650; }
+.week-entry strong { display: block; font-size: 13px; font-weight: 700; }
+.week-entry span, .week-entry small { display: block; margin-top: 3px; color: var(--dim); font-size: 10px; font-weight: 500; }
+.week-anchor { opacity: .82; }
+.week-anchor.is-protected strong::after { content: ""; display: inline-block; width: 5px; height: 5px; margin-left: 6px; border-radius: 50%; background: var(--color-deen); vertical-align: 2px; }
+.week-task { grid-template-columns: 62px 24px minmax(0, 1fr) 10px; width: 100%; padding: 0; cursor: pointer; }
+.week-task-check { display: grid !important; place-items: center; width: 22px; height: 22px; margin: 0 !important; border: 1px solid var(--line); border-radius: 7px; color: #fff !important; }
+.week-task.is-done .week-task-check { border-color: var(--color-deen); background: var(--color-deen); }
+.week-task.is-done strong { color: var(--dim); text-decoration: line-through; }
+.week-task > b { color: var(--dim); font-size: 20px; font-weight: 400; }
+.week-overdue { margin-top: 16px; padding: 12px 13px 3px; border: 1px solid color-mix(in srgb, var(--color-physique) 22%, var(--line)); border-radius: 12px; background: color-mix(in srgb, var(--color-physique) 4%, var(--card)); }
+.week-overdue h3 { display: flex; justify-content: space-between; margin: 0 0 5px; color: var(--color-physique); font-size: 11px; }
+.week-overdue button { display: flex; width: 100%; justify-content: space-between; align-items: center; padding: 11px 0; border: 0; border-top: 1px solid var(--line); background: transparent; color: var(--fg); text-align: left; cursor: pointer; }
+.week-overdue strong, .week-overdue small { display: block; font-size: 12px; }
+.week-overdue small { margin-top: 3px; color: var(--dim); font-size: 10px; }
+.week-overdue b { color: var(--dim); font-size: 20px; font-weight: 400; }
+.week-moved { margin: 13px 0 0; color: var(--dim); font-size: 10px; line-height: 1.4; }
+.week-loading, .week-error { margin: 0; color: var(--dim); font-size: 12px; }
+.week-error { color: var(--color-physique); }
+.week-backdrop { position: fixed; z-index: 50; inset: 0; display: flex; align-items: flex-end; justify-content: center; padding: 14px; background: rgba(13, 22, 18, .57); }
+.week-sheet { width: min(100%, 510px); max-height: min(90vh, 780px); overflow-y: auto; padding: 20px; border: 1px solid var(--line); border-radius: 20px; background: var(--card); box-shadow: 0 24px 70px rgba(0,0,0,.18); }
+.week-sheet-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
+.week-sheet-head h2 { margin: 0 0 16px; font-size: 23px; letter-spacing: -.04em; }
+.week-sheet-head > button { width: 30px; height: 30px; border: 0; background: transparent; color: var(--dim); font-size: 25px; cursor: pointer; }
+.week-complete { display: flex; width: 100%; align-items: center; gap: 9px; margin-bottom: 14px; padding: 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--fg); font-size: 12px; font-weight: 700; cursor: pointer; }
+.week-complete span { display: grid; place-items: center; width: 22px; height: 22px; border: 1px solid var(--line); border-radius: 7px; color: #fff; }
+.week-complete.is-done span { border-color: var(--color-deen); background: var(--color-deen); }
+.week-form { display: flex; flex-direction: column; gap: 12px; }
+.week-form label { display: flex; flex-direction: column; gap: 6px; color: var(--dim); font-size: 11px; font-weight: 700; }
+.week-form input { width: 100%; min-height: 42px; padding: 9px 11px; border: 1px solid var(--line); border-radius: 10px; outline-color: var(--color-school); background: var(--bg); color: var(--fg); font-size: 14px; }
+.week-form-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.week-modes { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
+.week-modes button { min-height: 41px; border: 1px solid var(--line); border-radius: 9px; background: var(--bg); color: var(--dim); font-size: 11px; font-weight: 700; cursor: pointer; }
+.week-modes button.selected { border-color: var(--color-school); background: color-mix(in srgb, var(--color-school) 9%, var(--card)); color: var(--color-school); }
+.week-preview { min-height: 43px; border: 0; border-radius: 10px; background: var(--fg); color: var(--bg); font-size: 12px; font-weight: 750; cursor: pointer; }
+.week-options { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--line); }
+.week-options h3 { margin: 0 0 8px; font-size: 14px; }
+.week-options > div { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--line); }
+.week-options span, .week-options strong, .week-options small { display: block; }
+.week-options strong { font-size: 12px; }
+.week-options small { margin-top: 3px; color: var(--color-deen); font-size: 10px; }
+.week-options small.has-cost { color: var(--color-physique); }
+.week-options button { flex: none; padding: 8px 11px; border: 0; border-radius: 8px; background: var(--color-school); color: #fff; font-size: 10px; font-weight: 750; cursor: pointer; }
+@media (min-width: 700px) { .week-backdrop { align-items: center; } }
+@media (max-width: 420px) { .week-timeline { padding: 17px 15px; } .week-entry { grid-template-columns: 58px 1fr; } .week-task { grid-template-columns: 58px 23px minmax(0,1fr) 8px; } .week-sheet { padding: 18px 16px; } }

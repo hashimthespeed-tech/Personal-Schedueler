@@ -49,4 +49,11 @@ describe("week timeline", () => {
     expect(entries.find((entry) => entry.id === "task-10")?.type).toBe("overdue");
     expect(entries.find((entry) => entry.id === "task-11")?.type).toBe("moved");
   });
+
+  it("groups the fixed school schedule into one readable anchor", () => {
+    const entries = mergeWeekTimeline(frame, []);
+    expect(entries.filter((entry) => entry.id === "block-school-day")).toHaveLength(1);
+    expect(entries.some((entry) => entry.title === "Break")).toBe(false);
+    expect(entries.some((entry) => entry.title.startsWith("P1 "))).toBe(false);
+  });
 });
