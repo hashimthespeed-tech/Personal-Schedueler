@@ -32,6 +32,13 @@
 .schoolwork-sessions span { color: var(--dim); font-size: 12px; }
 .schoolwork-sessions strong { font-size: 12px; font-weight: 750; white-space: nowrap; }
 .schoolwork-no-fit { margin: 0; color: var(--color-physique); font-size: 13px; line-height: 1.45; }
+.schoolwork-tradeoffs { display: grid; gap: 10px; margin-top: 14px; }
+.schoolwork-tradeoffs article { padding: 13px; border: 1px solid color-mix(in srgb, var(--color-physique) 24%, var(--line)); border-radius: 11px; background: color-mix(in srgb, var(--color-physique) 3%, var(--card)); }
+.schoolwork-tradeoff-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.schoolwork-tradeoff-head strong { font-size: 13px; }
+.schoolwork-tradeoff-head span { flex: none; color: var(--dim); font-size: 10px; }
+.schoolwork-tradeoffs ul { margin: 9px 0 11px; padding-left: 18px; color: var(--color-physique); font-size: 11px; line-height: 1.55; }
+.schoolwork-tradeoffs button { width: 100%; min-height: 37px; border: 1px solid var(--fg); border-radius: 8px; background: transparent; color: var(--fg); font-size: 11px; font-weight: 750; cursor: pointer; }
 .schoolwork-error { margin: -4px 2px; color: var(--color-physique); font-size: 12px; }
 .schoolwork-saved { margin: -4px 2px; color: var(--color-deen); font-size: 12px; }
 .schoolwork-upcoming { border-color: transparent; background: color-mix(in srgb, var(--color-school) 4%, var(--card)); }

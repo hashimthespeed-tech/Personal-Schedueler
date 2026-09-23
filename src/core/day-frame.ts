@@ -7,6 +7,8 @@ export type SleepMode = "current" | "target";
 export interface DayFrameOptions {
   sleepMode: SleepMode;
   extraBlocks?: PlanBlock[];
+  /** Include optional routines only so a proposal can name their exact cost. */
+  includeRoutineTradeoffs?: boolean;
   /** Arrival time is kept open for prayer and a shower, in either order. */
   afterSchoolPrayerMin?: number;
 }
@@ -63,6 +65,19 @@ export function buildDayFrame(date: string, options: DayFrameOptions): DayTempla
         end: home + duration,
         policy: "protected",
       });
+    }
+
+    if (options.includeRoutineTradeoffs && home !== null) {
+      const afterArrival = home + duration;
+      if (![2, 4].includes(localDate.weekday)) {
+        const workoutStart = Math.max(afterArrival, 17 * 60);
+        blocks.push({ id: "workout", title: "Workout", start: workoutStart, end: workoutStart + 60,
+          policy: "flexible", minMinutes: 40, cost: "routine" });
+      }
+      blocks.push({ id: "personal-focus", title: "Personal goal time", start: 20 * 60, end: 21 * 60,
+        policy: "flexible", minMinutes: 40, cost: "routine" });
+      blocks.push({ id: "wind-down", title: "Before-sleep time", start: SLEEP_TIMES[options.sleepMode].bedtime - 45,
+        end: SLEEP_TIMES[options.sleepMode].bedtime, policy: "flexible", minMinutes: 20, cost: "winddown" });
     }
   }
 

@@ -29,3 +29,16 @@ export const schoolworkPreview = {
   recommendedDates: selectedDates,
   plan: planSchoolwork({ id: "preview", title: "Calculus unit test", kind: "test", totalMin: 120, dueDate, selectedDates }, days),
 };
+
+const pressureDueDate = "2026-09-23";
+const pressureSelected = ["2026-09-22"];
+const pressureDays = days.filter((day) => day.template.date < pressureDueDate);
+export const schoolworkPressurePreview = {
+  ...schoolworkPreview,
+  draft: { ...schoolworkPreview.draft, title: "Calculus problem set", kind: "homework" as const,
+    estimatedMin: 225, dueDate: pressureDueDate },
+  options: suggestWorkdays(pressureDays, pressureDueDate),
+  recommendedDates: pressureSelected,
+  plan: planSchoolwork({ id: "pressure-preview", title: "Calculus problem set", kind: "assignment",
+    totalMin: 225, dueDate: pressureDueDate, selectedDates: pressureSelected }, pressureDays),
+};

@@ -1,5 +1,5 @@
 import { DateTime } from "luxon";
-import { proposePlacements, type DayTemplate, type PlacementProposal } from "./adaptive";
+import { proposePlacements, type DayTemplate, type PlacementCost, type PlacementProposal, type PlanBlock } from "./adaptive";
 
 export interface PlanningDay {
   template: DayTemplate;
@@ -29,7 +29,7 @@ export type SchoolworkPlan =
 
 const MAX_DAILY_SCHOOL_MIN = 120;
 
-function cleanWindows(day: PlanningDay): { start: number; end: number }[] {
+export function cleanWindows(day: PlanningDay): { start: number; end: number }[] {
   const end = day.template.bedtime;
   let cursor = Math.max(day.notBefore, day.template.wake);
   const windows: { start: number; end: number }[] = [];
@@ -44,6 +44,235 @@ function cleanWindows(day: PlanningDay): { start: number; end: number }[] {
   }
   if (end - cursor >= 5) windows.push({ start: cursor, end });
   return windows;
+}
+
+export interface SchoolworkTradeoff {
+  id: string;
+  title: string;
+  sessions: WorkSession[];
+  costs: PlacementCost[];
+}
+
+export interface CustomTradeoffSource {
+  id: string;
+  date: string;
+  blockId?: string;
+  title: string;
+  type: PlacementCost["type"];
+  originalMinutes: number;
+  minimumMinutes: number;
+  maxRemovable: number;
+}
+
+export interface CustomTradeoffDraft {
+  requiredMinutes: number;
+  sources: CustomTradeoffSource[];
+}
+
+export interface CustomAllocation { sourceId: string; minutes: number }
+
+interface AvailableBlock { day: PlanningDay; block: PlanBlock; available: number }
+
+function directSession(day: PlanningDay, request: SchoolworkRequest, start: number, minutes: number,
+  role: WorkSession["role"], costs: PlacementCost[] = []): WorkSession {
+  const end = start + minutes;
+  const bedtime = Math.max(day.template.bedtime, end);
+  return { date: day.template.date, minutes, role, placement: { start, end, bedtime,
+    remainingSleepMin: day.template.nextWake + 1440 - bedtime, overdue: false, costs } };
+}
+
+function cleanBase(request: SchoolworkRequest, selected: PlanningDay[]): { sessions: WorkSession[]; remaining: number } {
+  let remaining = request.totalMin;
+  const sessions: WorkSession[] = [];
+  for (const day of selected) {
+    let daily = MAX_DAILY_SCHOOL_MIN;
+    for (const window of cleanWindows(day)) {
+      if (remaining === 0 || daily === 0) break;
+      const amount = Math.min(remaining, daily, Math.floor((window.end - window.start) / 5) * 5);
+      if (amount < 5) continue;
+      sessions.push(directSession(day, request, window.start, amount, "study"));
+      remaining -= amount;
+      daily -= amount;
+    }
+  }
+  return { sessions, remaining };
+}
+
+function selectedDays(request: SchoolworkRequest, days: PlanningDay[]): PlanningDay[] | null {
+  const selected = request.selectedDates.map((date) => days.find((day) => day.template.date === date))
+    .filter((day): day is PlanningDay => !!day).sort((a, b) => a.template.date.localeCompare(b.template.date));
+  return selected.length === request.selectedDates.length && selected.length > 0 ? selected : null;
+}
+
+export function customTradeoffDraft(request: SchoolworkRequest, days: PlanningDay[]): CustomTradeoffDraft | null {
+  const selected = selectedDays(request, days);
+  if (!selected) return null;
+  const base = cleanBase(request, selected);
+  if (base.remaining === 0) return null;
+  const sources: CustomTradeoffSource[] = [];
+  for (const day of selected) {
+    for (const block of day.template.blocks) {
+      if (block.policy !== "flexible" || (block.canUseFor && block.canUseFor !== "school")) continue;
+      const originalMinutes = block.end - block.start;
+      const minimumMinutes = block.minMinutes ?? 0;
+      const maxRemovable = Math.floor((originalMinutes - minimumMinutes) / 5) * 5;
+      if (maxRemovable < 5) continue;
+      sources.push({ id: `${day.template.date}:${block.id}`, date: day.template.date, blockId: block.id,
+        title: block.title, type: block.cost ?? "routine", originalMinutes, minimumMinutes, maxRemovable });
+    }
+    const isUrgent = DateTime.fromISO(request.dueDate).minus({ days: 1 }).toISODate() === day.template.date;
+    if (isUrgent) {
+      const originalMinutes = day.template.nextWake + 1440 - day.template.bedtime;
+      const minimumMinutes = 7 * 60;
+      const maxRemovable = Math.floor((originalMinutes - minimumMinutes) / 5) * 5;
+      if (maxRemovable >= 5) sources.push({ id: `${day.template.date}:sleep`, date: day.template.date,
+        title: "Sleep", type: "sleep", originalMinutes, minimumMinutes, maxRemovable });
+    }
+  }
+  return sources.reduce((sum, source) => sum + source.maxRemovable, 0) >= base.remaining ?
+    { requiredMinutes: base.remaining, sources } : null;
+}
+
+export function buildCustomSchoolworkTradeoff(request: SchoolworkRequest, days: PlanningDay[],
+  allocation: CustomAllocation[]): SchoolworkTradeoff | null {
+  const selected = selectedDays(request, days);
+  const draft = customTradeoffDraft(request, days);
+  if (!selected || !draft) return null;
+  const sourceById = new Map(draft.sources.map((source) => [source.id, source]));
+  const seen = new Set<string>();
+  let total = 0;
+  for (const item of allocation) {
+    const source = sourceById.get(item.sourceId);
+    if (!source || seen.has(item.sourceId) || !Number.isInteger(item.minutes) || item.minutes < 0 ||
+      item.minutes % 5 !== 0 || item.minutes > source.maxRemovable) return null;
+    seen.add(item.sourceId);
+    total += item.minutes;
+  }
+  if (total !== draft.requiredMinutes) return null;
+
+  const base = cleanBase(request, selected);
+  const sessions = [...base.sessions];
+  const costs: PlacementCost[] = [];
+  for (const item of allocation) {
+    if (item.minutes === 0) continue;
+    const source = sourceById.get(item.sourceId)!;
+    const day = selected.find((candidate) => candidate.template.date === source.date)!;
+    if (source.type === "sleep") {
+      const cost: PlacementCost = { type: "sleep", title: `Sleep · ${DateTime.fromISO(source.date).toFormat("ccc")}`,
+        lostMin: item.minutes, remainingMin: source.originalMinutes - item.minutes };
+      costs.push(cost);
+      sessions.push(directSession(day, request, day.template.bedtime, item.minutes, "study", [cost]));
+      continue;
+    }
+    const block = day.template.blocks.find((candidate) => candidate.id === source.blockId);
+    if (!block) return null;
+    const cost: PlacementCost = { blockId: block.id,
+      title: `${block.title} · ${DateTime.fromISO(source.date).toFormat("ccc")}`, type: source.type,
+      lostMin: item.minutes, remainingMin: source.originalMinutes - item.minutes };
+    costs.push(cost);
+    sessions.push(directSession(day, request, block.end - item.minutes, item.minutes, "study", [cost]));
+  }
+  sessions.sort((a, b) => a.date.localeCompare(b.date) || a.placement.start - b.placement.start);
+  return sessions.reduce((sum, session) => sum + session.minutes, 0) === request.totalMin ?
+    { id: "custom", title: "Your custom plan", sessions, costs } : null;
+}
+
+function allocateFromBlocks(blocks: AvailableBlock[], remaining: number, balanced: boolean, perBlockCap = Infinity) {
+  const used = new Map<AvailableBlock, number>();
+  if (balanced) {
+    while (remaining > 0) {
+      let changed = false;
+      for (const item of blocks) {
+        const amount = used.get(item) ?? 0;
+        if (amount + 5 > Math.min(item.available, perBlockCap) || remaining < 5) continue;
+        used.set(item, amount + 5);
+        remaining -= 5;
+        changed = true;
+      }
+      if (!changed) break;
+    }
+  } else {
+    for (const item of blocks) {
+      if (remaining === 0) break;
+      const amount = Math.min(item.available, perBlockCap, remaining);
+      if (amount >= 5) {
+        used.set(item, amount);
+        remaining -= amount;
+      }
+    }
+  }
+  return { used, remaining };
+}
+
+/** Explicit alternatives for work that cannot fit in clean time. Nothing is applied here. */
+export function proposeSchoolworkTradeoffs(request: SchoolworkRequest, days: PlanningDay[]): SchoolworkTradeoff[] {
+  const selected = selectedDays(request, days);
+  if (!selected) return [];
+  const base = cleanBase(request, selected);
+  if (base.remaining === 0) return [];
+
+  const flexible = selected.flatMap((day) => day.template.blocks
+    .filter((block) => block.policy === "flexible" && (!block.canUseFor || block.canUseFor === "school"))
+    .map((block) => ({ day, block, available: Math.floor((block.end - block.start - (block.minMinutes ?? 0)) / 5) * 5 }))
+    .filter((item) => item.available >= 5));
+  const byType = (type: PlacementCost["type"]) => flexible.filter((item) => (item.block.cost ?? "routine") === type);
+  const strategies = [
+    { id: "protect-evening", title: "Use school friend time and small routine cuts", order: ["friend", "routine", "winddown"] as const, balanceRoutine: true, routineCap: 10 },
+    { id: "share-cuts", title: "Split cuts across routines", order: ["routine", "friend", "winddown"] as const, balanceRoutine: true, routineCap: Infinity },
+    { id: "protect-routines", title: "Protect workout and goal time", order: ["friend", "winddown"] as const, balanceRoutine: false, routineCap: 0 },
+  ];
+  const results: SchoolworkTradeoff[] = [];
+  const seen = new Set<string>();
+
+  for (const strategy of strategies) {
+    let remaining = base.remaining;
+    const used = new Map<AvailableBlock, number>();
+    for (const type of strategy.order) {
+      const allocation = allocateFromBlocks(byType(type), remaining, type === "routine" && strategy.balanceRoutine,
+        type === "routine" ? strategy.routineCap : Infinity);
+      for (const [item, amount] of allocation.used) used.set(item, (used.get(item) ?? 0) + amount);
+      remaining = allocation.remaining;
+    }
+
+    let sleep: { day: PlanningDay; minutes: number } | null = null;
+    if (remaining > 0) {
+      const urgentDay = [...selected].reverse().find((day) =>
+        DateTime.fromISO(request.dueDate).minus({ days: 1 }).toISODate() === day.template.date);
+      if (urgentDay) {
+        const capacity = Math.max(0, urgentDay.template.nextWake + 1440 - urgentDay.template.bedtime - 7 * 60);
+        const amount = Math.min(remaining, Math.floor(capacity / 5) * 5);
+        if (amount >= 5) { sleep = { day: urgentDay, minutes: amount }; remaining -= amount; }
+      }
+    }
+    if (remaining > 0) continue;
+
+    const sessions = [...base.sessions];
+    const costs: PlacementCost[] = [];
+    for (const [item, amount] of used) {
+      const type = item.block.cost ?? "routine";
+      const dayName = DateTime.fromISO(item.day.template.date).toFormat("ccc");
+      const cost: PlacementCost = { blockId: item.block.id, title: `${item.block.title} · ${dayName}`, type,
+        lostMin: amount, remainingMin: item.block.end - item.block.start - amount };
+      costs.push(cost);
+      sessions.push(directSession(item.day, request, item.block.end - amount, amount, "study", [cost]));
+    }
+    if (sleep) {
+      const cost: PlacementCost = { type: "sleep", lostMin: sleep.minutes };
+      costs.push(cost);
+      sessions.push(directSession(sleep.day, request, sleep.day.template.bedtime, sleep.minutes, "study", [cost]));
+    }
+    sessions.sort((a, b) => a.date.localeCompare(b.date) || a.placement.start - b.placement.start);
+    const signature = costs.map((cost) => `${cost.type}:${cost.blockId ?? ""}:${cost.lostMin}`).sort().join("|");
+    if (!seen.has(signature)) {
+      seen.add(signature);
+      const types = new Set(costs.map((cost) => cost.type));
+      const sleepCost = costs.find((cost) => cost.type === "sleep");
+      const title = sleepCost ? `${strategy.title} + ${sleepCost.lostMin} min less sleep` :
+        types.size === 1 && types.has("friend") ? "Use school friend time" : strategy.title;
+      results.push({ id: strategy.id, title, sessions, costs });
+    }
+  }
+  return results;
 }
 
 /** Total clean time, capped so one selected day is not overloaded. */

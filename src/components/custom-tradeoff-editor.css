@@ -1,0 +1,27 @@
+.custom-tradeoff-open { display: flex; width: 100%; justify-content: space-between; align-items: center; gap: 12px; margin-top: 12px; padding: 14px; border: 1px solid var(--color-school); border-radius: 12px; background: color-mix(in srgb, var(--color-school) 6%, var(--card)); color: var(--fg); font-size: 13px; font-weight: 800; text-align: left; cursor: pointer; }
+.custom-tradeoff-open span { max-width: 185px; color: var(--color-school); font-size: 10px; font-weight: 700; line-height: 1.35; text-align: right; }
+.custom-tradeoff { margin-top: 14px; padding: 15px; border: 1px solid var(--color-school); border-radius: 15px; background: color-mix(in srgb, var(--color-school) 4%, var(--card)); }
+.custom-tradeoff-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.custom-tradeoff-heading p { margin: 0 0 3px; color: var(--color-school); font-size: 8px; font-weight: 850; letter-spacing: .14em; }
+.custom-tradeoff-heading h3 { margin: 0; font-size: 17px; letter-spacing: -.03em; }
+.custom-tradeoff-heading button { width: 30px; height: 30px; padding: 0; border: 1px solid var(--line); border-radius: 9px; background: var(--card); color: var(--dim); font-size: 20px; cursor: pointer; }
+.custom-tradeoff-help { margin: 8px 0 13px; color: var(--dim); font-size: 11px; line-height: 1.45; }
+.custom-tradeoff-meter { display: flex; align-items: baseline; gap: 7px; margin-bottom: 8px; padding: 11px 12px; border-radius: 10px; background: color-mix(in srgb, var(--color-school) 11%, var(--card)); color: var(--color-school); }
+.custom-tradeoff-meter strong { font-size: 19px; }
+.custom-tradeoff-meter span { font-size: 11px; font-weight: 750; }
+.custom-tradeoff-meter.ready { background: color-mix(in srgb, var(--color-deen) 11%, var(--card)); color: var(--color-deen); }
+.custom-tradeoff-meter.over { background: color-mix(in srgb, #c84b3f 10%, var(--card)); color: #b83e34; }
+.custom-tradeoff-sources { display: flex; flex-direction: column; }
+.custom-tradeoff-source { display: block; padding: 13px 0; border-bottom: 1px solid var(--line); }
+.custom-tradeoff-source-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
+.custom-tradeoff-source-head > span { display: flex; align-items: baseline; gap: 6px; min-width: 0; }
+.custom-tradeoff-source-head strong { overflow: hidden; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.custom-tradeoff-source-head small { color: var(--dim); font-size: 9px; font-weight: 750; }
+.custom-tradeoff-source-head b { flex: none; color: var(--color-school); font-size: 12px; }
+.custom-tradeoff-source input { width: 100%; accent-color: var(--color-school); }
+.custom-tradeoff-limits { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; margin-top: 7px; color: var(--dim); font-size: 8px; }
+.custom-tradeoff-limits span:nth-child(2) { text-align: center; }
+.custom-tradeoff-limits span:last-child { text-align: right; }
+.custom-tradeoff-limits b { color: var(--fg); font-size: 9px; }
+.custom-tradeoff > .schoolwork-primary { margin-top: 14px; }
+@media (min-width: 760px) { .custom-tradeoff { padding: 18px; } .custom-tradeoff-sources { display: grid; grid-template-columns: 1fr 1fr; column-gap: 22px; } }

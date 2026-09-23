@@ -25,6 +25,22 @@ describe("day frames from the real weekly schedule", () => {
     }
   });
 
+  it("can expose explicit routine trade-offs without making them free time", () => {
+    const monday = buildDayFrame("2026-09-21", { sleepMode: "current", includeRoutineTradeoffs: true });
+    expect(monday.blocks.find((block) => block.id === "workout")).toMatchObject({
+      policy: "flexible", minMinutes: 40, cost: "routine",
+    });
+    expect(monday.blocks.find((block) => block.id === "personal-focus")).toMatchObject({
+      policy: "flexible", minMinutes: 40, cost: "routine",
+    });
+    expect(monday.blocks.find((block) => block.id === "wind-down")).toMatchObject({
+      start: 1365, end: 1410, policy: "flexible", minMinutes: 20, cost: "winddown",
+    });
+
+    const practice = buildDayFrame("2026-09-22", { sleepMode: "current", includeRoutineTradeoffs: true });
+    expect(practice.blocks.some((block) => block.id === "workout")).toBe(false);
+  });
+
   it("uses the Friday bells and supports the future sleep schedule", () => {
     const day = buildDayFrame("2026-09-25", { sleepMode: "target" });
     expect(day).toMatchObject({ wake: 360, bedtime: 1320, nextWake: 360 });

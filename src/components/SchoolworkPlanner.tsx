@@ -3,8 +3,9 @@
 import { useCallback, useEffect, useState } from "react";
 import { DateTime } from "luxon";
 import { buildDayFrame } from "@/core/day-frame";
-import { planSchoolwork, recommendWorkdays, suggestWorkdays, type PlanningDay, type SchoolworkPlan } from "@/core/schoolwork";
+import { buildCustomSchoolworkTradeoff, customTradeoffDraft, planSchoolwork, proposeSchoolworkTradeoffs, recommendWorkdays, suggestWorkdays, type CustomAllocation, type CustomTradeoffDraft, type PlanningDay, type SchoolworkPlan, type SchoolworkTradeoff, type WorkSession } from "@/core/schoolwork";
 import { to12h } from "@/core/types";
+import { CustomTradeoffEditor } from "./CustomTradeoffEditor";
 import "./schoolwork-planner.css";
 
 interface Course { id: number; code: string; name: string }
@@ -32,7 +33,7 @@ function previewDays(from: string, dueDate: string): PlanningDay[] {
   const end = DateTime.min(DateTime.fromISO(dueDate).minus({ days: 1 }), start.plus({ days: 29 }));
   for (let day = start; day <= end; day = day.plus({ days: 1 })) {
     const date = day.toISODate()!;
-    const frame = buildDayFrame(date, { sleepMode: "current" });
+    const frame = buildDayFrame(date, { sleepMode: "current", includeRoutineTradeoffs: true });
     days.push({ template: frame, notBefore: date === from ? 1000 : frame.wake });
   }
   return days;
@@ -46,6 +47,20 @@ export function SchoolworkPlanner({ initialDate, previewData }: { initialDate: s
   const [days, setDays] = useState<AvailableDay[] | null>(previewData?.options ?? null);
   const [selected, setSelected] = useState<string[]>(previewData?.recommendedDates ?? []);
   const [plan, setPlan] = useState<SchoolworkPlan | null>(previewData?.plan ?? null);
+  const [tradeoffs, setTradeoffs] = useState<SchoolworkTradeoff[]>(() => {
+    if (!previewData || previewData.plan.ok) return [];
+    return proposeSchoolworkTradeoffs({ id: "preview", title: previewData.draft.title,
+      kind: previewData.draft.kind === "test" ? "test" : "assignment", totalMin: previewData.draft.estimatedMin,
+      dueDate: previewData.draft.dueDate, selectedDates: previewData.recommendedDates },
+    previewDays(previewData.date, previewData.draft.dueDate));
+  });
+  const [customDraft, setCustomDraft] = useState<CustomTradeoffDraft | null>(() => {
+    if (!previewData || previewData.plan.ok) return null;
+    return customTradeoffDraft({ id: "preview", title: previewData.draft.title,
+      kind: previewData.draft.kind === "test" ? "test" : "assignment", totalMin: previewData.draft.estimatedMin,
+      dueDate: previewData.draft.dueDate, selectedDates: previewData.recommendedDates },
+    previewDays(previewData.date, previewData.draft.dueDate));
+  });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [saved, setSaved] = useState("");
@@ -67,12 +82,12 @@ export function SchoolworkPlanner({ initialDate, previewData }: { initialDate: s
 
   function edit(change: Partial<Draft>) {
     setDraft((old) => ({ ...old, ...change }));
-    setDays(null); setSelected([]); setPlan(null); setError(""); setSaved("");
+    setDays(null); setSelected([]); setPlan(null); setTradeoffs([]); setCustomDraft(null); setError(""); setSaved("");
   }
 
   async function findDays() {
     if (!draft.courseId || !draft.title.trim()) { setError("Choose a class and name the work first."); return; }
-    setBusy(true); setError(""); setPlan(null);
+    setBusy(true); setError(""); setPlan(null); setTradeoffs([]); setCustomDraft(null);
     try {
       if (previewData) {
         const planning = previewDays(initialDate, draft.dueDate);
@@ -108,38 +123,70 @@ export function SchoolworkPlanner({ initialDate, previewData }: { initialDate: s
     setBusy(true); setError("");
     try {
       if (previewData) {
-        setPlan(planSchoolwork({ id: "preview", title: draft.title, kind: draft.kind === "test" ? "test" : "assignment",
-          totalMin: draft.estimatedMin, dueDate: draft.dueDate, selectedDates: selected }, previewDays(initialDate, draft.dueDate)));
+        const request = { id: "preview", title: draft.title, kind: draft.kind === "test" ? "test" as const : "assignment" as const,
+          totalMin: draft.estimatedMin, dueDate: draft.dueDate, selectedDates: selected };
+        const planning = previewDays(initialDate, draft.dueDate).map((day) => ({ ...day,
+          template: buildDayFrame(day.template.date, { sleepMode: "current", includeRoutineTradeoffs: true }) }));
+        const nextPlan = planSchoolwork(request, planning);
+        setPlan(nextPlan);
+        setTradeoffs(nextPlan.ok ? [] : proposeSchoolworkTradeoffs(request, planning));
+        setCustomDraft(nextPlan.ok ? null : customTradeoffDraft(request, planning));
       } else {
         const response = await fetch("/api/schoolwork", { method: "POST", headers: { "content-type": "application/json" },
           body: JSON.stringify({ action: "preview", ...draft, selectedDates: selected }) });
-        const data = await response.json() as { ok: boolean; plan?: SchoolworkPlan; error?: string };
+        const data = await response.json() as { ok: boolean; plan?: SchoolworkPlan; tradeoffs?: SchoolworkTradeoff[]; customDraft?: CustomTradeoffDraft | null; error?: string };
         if (!response.ok || !data.ok || !data.plan) throw new Error(data.error ?? "Could not preview the plan.");
         setPlan(data.plan);
+        setTradeoffs(data.tradeoffs ?? []);
+        setCustomDraft(data.customDraft ?? null);
       }
     } catch (cause) { setError(cause instanceof Error ? cause.message : "Could not preview the plan."); }
     finally { setBusy(false); }
   }
 
-  async function approve() {
-    if (!plan?.ok) return;
+  async function approve(sessions: WorkSession[]) {
     setBusy(true); setError("");
     try {
       if (previewData) {
-        setAssignments((old) => [{ id: Date.now(), ...draft, sessions: plan.sessions.map((session, index) => ({
+        setAssignments((old) => [{ id: Date.now(), ...draft, sessions: sessions.map((session, index) => ({
           id: Date.now() + index, onDate: session.date, durationMin: session.minutes,
           startMin: session.placement.start, role: session.role, status: "planned" })),
         }, ...old]);
       } else {
         const response = await fetch("/api/schoolwork", { method: "POST", headers: { "content-type": "application/json" },
-          body: JSON.stringify({ action: "approve", ...draft, selectedDates: selected, chosen: plan.sessions }) });
+          body: JSON.stringify({ action: "approve", ...draft, selectedDates: selected, chosen: sessions }) });
         const data = await response.json() as { ok: boolean; error?: string };
         if (!response.ok || !data.ok) throw new Error(data.error ?? "Could not save the plan.");
         await load();
       }
       setSaved(`${draft.title} is in your schedule.`);
-      setDraft((old) => ({ ...old, title: "" })); setDays(null); setSelected([]); setPlan(null);
+      setDraft((old) => ({ ...old, title: "" })); setDays(null); setSelected([]); setPlan(null); setTradeoffs([]); setCustomDraft(null);
     } catch (cause) { setError(cause instanceof Error ? cause.message : "Could not save the plan."); }
+    finally { setBusy(false); }
+  }
+
+  async function approveCustom(allocation: CustomAllocation[]) {
+    setBusy(true); setError("");
+    try {
+      if (previewData) {
+        const request = { id: "preview", title: draft.title, kind: draft.kind === "test" ? "test" as const : "assignment" as const,
+          totalMin: draft.estimatedMin, dueDate: draft.dueDate, selectedDates: selected };
+        const custom = buildCustomSchoolworkTradeoff(request, previewDays(initialDate, draft.dueDate), allocation);
+        if (!custom) throw new Error("That custom plan no longer matches the available time.");
+        setAssignments((old) => [{ id: Date.now(), ...draft, sessions: custom.sessions.map((session, index) => ({
+          id: Date.now() + index, onDate: session.date, durationMin: session.minutes,
+          startMin: session.placement.start, role: session.role, status: "planned" })),
+        }, ...old]);
+      } else {
+        const response = await fetch("/api/schoolwork", { method: "POST", headers: { "content-type": "application/json" },
+          body: JSON.stringify({ action: "approve", ...draft, selectedDates: selected, customAllocation: allocation }) });
+        const data = await response.json() as { ok: boolean; error?: string };
+        if (!response.ok || !data.ok) throw new Error(data.error ?? "Could not save the custom plan.");
+        await load();
+      }
+      setSaved(`${draft.title} is in your schedule.`);
+      setDraft((old) => ({ ...old, title: "" })); setDays(null); setSelected([]); setPlan(null); setTradeoffs([]); setCustomDraft(null);
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "Could not save the custom plan."); }
     finally { setBusy(false); }
   }
 
@@ -185,11 +232,22 @@ export function SchoolworkPlanner({ initialDate, previewData }: { initialDate: s
         <div className="schoolwork-sessions">{plan.sessions.map((session, index) => <div key={`${session.date}-${index}`}>
           <span>{prettyDate(session.date)}{session.role === "refresher" ? " · Refresher" : ""}</span>
           <strong>{to12h(session.placement.start)} · {session.minutes} min</strong></div>)}</div>
-        <button type="button" className="schoolwork-primary" disabled={busy} onClick={() => void approve()}>
+        <button type="button" className="schoolwork-primary" disabled={busy} onClick={() => void approve(plan.sessions)}>
           {busy ? "Saving…" : "Approve and add to schedule"}</button></>
-      : <p className="schoolwork-no-fit">{plan.reason === "test-days" ? "Choose exactly two days, including the day before the test." :
+      : <><p className="schoolwork-no-fit">{tradeoffs.length ? "A clean plan does not fit. Nothing changes unless you approve one of these exact costs." : plan.reason === "test-days" ? "Choose exactly two days, including the day before the test." :
         plan.reason === "invalid-days" ? "Choose days before the due date." :
-        `These days are short by ${plan.shortfallMin ?? 0} minutes. Choose another earlier day.`}</p>}
+        `These days are short by ${plan.shortfallMin ?? 0} minutes. Choose another earlier day.`}</p>
+        {tradeoffs.length > 0 && <div className="schoolwork-tradeoffs">{tradeoffs.map((option) => <article key={option.id}>
+          <div className="schoolwork-tradeoff-head"><strong>{option.title}</strong><span>{option.sessions.reduce((sum, session) => sum + session.minutes, 0)} min total</span></div>
+          <ul>{option.costs.map((cost, index) => <li key={`${cost.type}-${cost.blockId ?? index}`}>
+            {cost.type === "friend" ? `${cost.lostMin} min less friend time in the library` :
+              cost.type === "sleep" ? `${cost.lostMin} min less sleep — never below 7 hours` :
+              cost.type === "winddown" ? `${cost.lostMin} min less before-sleep time` :
+              `${cost.lostMin} min shorter ${cost.title ?? "routine"}`}</li>)}</ul>
+          <button type="button" disabled={busy} onClick={() => void approve(option.sessions)}>Approve this option</button>
+        </article>)}</div>}
+        {customDraft && <CustomTradeoffEditor draft={customDraft} busy={busy} initiallyOpen={!!previewData}
+          onApprove={(allocation) => void approveCustom(allocation)} />}</>}
     </section>}
     {error && <p className="schoolwork-error" role="alert">{error}</p>}
     {saved && <p className="schoolwork-saved" role="status">{saved}</p>}
