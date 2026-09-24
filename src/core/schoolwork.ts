@@ -37,12 +37,12 @@ export function cleanWindows(day: PlanningDay): { start: number; end: number }[]
     if (block.end <= cursor) continue;
     if (block.start > cursor) {
       const next = Math.min(block.start, end);
-      if (next - cursor >= 5) windows.push({ start: cursor, end: next });
+      if (next - cursor >= 1) windows.push({ start: cursor, end: next });
     }
     cursor = Math.max(cursor, block.end);
     if (cursor >= end) break;
   }
-  if (end - cursor >= 5) windows.push({ start: cursor, end });
+  if (end - cursor >= 1) windows.push({ start: cursor, end });
   return windows;
 }
 
@@ -88,8 +88,8 @@ function cleanBase(request: SchoolworkRequest, selected: PlanningDay[]): { sessi
     let daily = MAX_DAILY_SCHOOL_MIN;
     for (const window of cleanWindows(day)) {
       if (remaining === 0 || daily === 0) break;
-      const amount = Math.min(remaining, daily, Math.floor((window.end - window.start) / 5) * 5);
-      if (amount < 5) continue;
+      const amount = Math.min(remaining, daily, window.end - window.start);
+      if (amount < 1) continue;
       sessions.push(directSession(day, request, window.start, amount, "study"));
       remaining -= amount;
       daily -= amount;
@@ -115,8 +115,8 @@ export function customTradeoffDraft(request: SchoolworkRequest, days: PlanningDa
       if (block.policy !== "flexible" || (block.canUseFor && block.canUseFor !== "school")) continue;
       const originalMinutes = block.end - block.start;
       const minimumMinutes = block.minMinutes ?? 0;
-      const maxRemovable = Math.floor((originalMinutes - minimumMinutes) / 5) * 5;
-      if (maxRemovable < 5) continue;
+      const maxRemovable = originalMinutes - minimumMinutes;
+      if (maxRemovable < 1) continue;
       sources.push({ id: `${day.template.date}:${block.id}`, date: day.template.date, blockId: block.id,
         title: block.title, type: block.cost ?? "routine", originalMinutes, minimumMinutes, maxRemovable });
     }
@@ -124,8 +124,8 @@ export function customTradeoffDraft(request: SchoolworkRequest, days: PlanningDa
     if (isUrgent) {
       const originalMinutes = day.template.nextWake + 1440 - day.template.bedtime;
       const minimumMinutes = 7 * 60;
-      const maxRemovable = Math.floor((originalMinutes - minimumMinutes) / 5) * 5;
-      if (maxRemovable >= 5) sources.push({ id: `${day.template.date}:sleep`, date: day.template.date,
+      const maxRemovable = originalMinutes - minimumMinutes;
+      if (maxRemovable >= 1) sources.push({ id: `${day.template.date}:sleep`, date: day.template.date,
         title: "Sleep", type: "sleep", originalMinutes, minimumMinutes, maxRemovable });
     }
   }
@@ -144,7 +144,7 @@ export function buildCustomSchoolworkTradeoff(request: SchoolworkRequest, days: 
   for (const item of allocation) {
     const source = sourceById.get(item.sourceId);
     if (!source || seen.has(item.sourceId) || !Number.isInteger(item.minutes) || item.minutes < 0 ||
-      item.minutes % 5 !== 0 || item.minutes > source.maxRemovable) return null;
+      item.minutes > source.maxRemovable) return null;
     seen.add(item.sourceId);
     total += item.minutes;
   }
@@ -184,9 +184,9 @@ function allocateFromBlocks(blocks: AvailableBlock[], remaining: number, balance
       let changed = false;
       for (const item of blocks) {
         const amount = used.get(item) ?? 0;
-        if (amount + 5 > Math.min(item.available, perBlockCap) || remaining < 5) continue;
-        used.set(item, amount + 5);
-        remaining -= 5;
+        if (amount + 1 > Math.min(item.available, perBlockCap)) continue;
+        used.set(item, amount + 1);
+        remaining -= 1;
         changed = true;
       }
       if (!changed) break;
@@ -195,7 +195,7 @@ function allocateFromBlocks(blocks: AvailableBlock[], remaining: number, balance
     for (const item of blocks) {
       if (remaining === 0) break;
       const amount = Math.min(item.available, perBlockCap, remaining);
-      if (amount >= 5) {
+      if (amount >= 1) {
         used.set(item, amount);
         remaining -= amount;
       }
@@ -213,8 +213,8 @@ export function proposeSchoolworkTradeoffs(request: SchoolworkRequest, days: Pla
 
   const flexible = selected.flatMap((day) => day.template.blocks
     .filter((block) => block.policy === "flexible" && (!block.canUseFor || block.canUseFor === "school"))
-    .map((block) => ({ day, block, available: Math.floor((block.end - block.start - (block.minMinutes ?? 0)) / 5) * 5 }))
-    .filter((item) => item.available >= 5));
+    .map((block) => ({ day, block, available: block.end - block.start - (block.minMinutes ?? 0) }))
+    .filter((item) => item.available >= 1));
   const byType = (type: PlacementCost["type"]) => flexible.filter((item) => (item.block.cost ?? "routine") === type);
   const strategies = [
     { id: "protect-evening", title: "Use school friend time and small routine cuts", order: ["friend", "routine", "winddown"] as const, balanceRoutine: true, routineCap: 10 },
@@ -240,8 +240,8 @@ export function proposeSchoolworkTradeoffs(request: SchoolworkRequest, days: Pla
         DateTime.fromISO(request.dueDate).minus({ days: 1 }).toISODate() === day.template.date);
       if (urgentDay) {
         const capacity = Math.max(0, urgentDay.template.nextWake + 1440 - urgentDay.template.bedtime - 7 * 60);
-        const amount = Math.min(remaining, Math.floor(capacity / 5) * 5);
-        if (amount >= 5) { sleep = { day: urgentDay, minutes: amount }; remaining -= amount; }
+        const amount = Math.min(remaining, capacity);
+        if (amount >= 1) { sleep = { day: urgentDay, minutes: amount }; remaining -= amount; }
       }
     }
     if (remaining > 0) continue;
@@ -278,7 +278,7 @@ export function proposeSchoolworkTradeoffs(request: SchoolworkRequest, days: Pla
 /** Total clean time, capped so one selected day is not overloaded. */
 export function cleanCapacity(day: PlanningDay): number {
   const total = cleanWindows(day).reduce((sum, window) => sum + window.end - window.start, 0);
-  return Math.min(MAX_DAILY_SCHOOL_MIN, Math.floor(total / 5) * 5);
+  return Math.min(MAX_DAILY_SCHOOL_MIN, total);
 }
 
 export function suggestWorkdays(days: PlanningDay[], dueDate: string): { date: string; availableMin: number }[] {
@@ -288,13 +288,20 @@ export function suggestWorkdays(days: PlanningDay[], dueDate: string): { date: s
     .sort((a, b) => a.date.localeCompare(b.date));
 }
 
+function testRefresherMinutes(totalMin: number): number {
+  if (totalMin >= 30) {
+    return Math.min(30, Math.max(15, Math.round(totalMin * 0.25 / 5) * 5));
+  }
+  return Math.min(totalMin - 1, Math.max(1, Math.round(totalMin * 0.25)));
+}
+
 /** Default suggestion, still editable: use the latest days with enough clean capacity. */
 export function recommendWorkdays(days: PlanningDay[], dueDate: string, totalMin: number,
   kind: SchoolworkRequest["kind"]): string[] {
-  const options = suggestWorkdays(days, dueDate).filter((day) => day.availableMin >= 15);
+  const options = suggestWorkdays(days, dueDate).filter((day) => day.availableMin >= 1);
   if (kind === "test") {
     const dayBefore = DateTime.fromISO(dueDate).minus({ days: 1 }).toISODate();
-    const refresherMin = Math.min(30, Math.max(15, Math.round(totalMin * 0.25 / 5) * 5));
+    const refresherMin = testRefresherMinutes(totalMin);
     const refresher = options.find((day) => day.date === dayBefore && day.availableMin >= refresherMin);
     const study = [...options].reverse().find((day) => day.date < (dayBefore ?? "") && day.availableMin >= totalMin - refresherMin);
     return refresher && study ? [study.date, refresher.date] : [];
@@ -314,8 +321,8 @@ function place(day: PlanningDay, request: SchoolworkRequest, minutes: number, ro
   const sessions: WorkSession[] = [];
   for (const window of cleanWindows(day)) {
     if (remaining === 0) break;
-    const amount = Math.min(remaining, Math.floor((window.end - window.start) / 5) * 5);
-    if (amount < 5) continue;
+    const amount = Math.min(remaining, window.end - window.start);
+    if (amount < 1) continue;
     const placement = proposePlacements(day.template, {
       id: request.id, title: request.title, durationMin: amount,
       kind: "school", mode: "fixed", at: window.start,
@@ -329,7 +336,7 @@ function place(day: PlanningDay, request: SchoolworkRequest, minutes: number, ro
 
 /** Preview work blocks on the chosen days without writing to a schedule. */
 export function planSchoolwork(request: SchoolworkRequest, days: PlanningDay[]): SchoolworkPlan {
-  if (!Number.isInteger(request.totalMin) || request.totalMin < 15 || request.totalMin % 5 !== 0) {
+  if (!Number.isInteger(request.totalMin) || request.totalMin < 1) {
     return { ok: false, reason: "invalid-duration" };
   }
   const byDate = new Map(days.map((day) => [day.template.date, day]));
@@ -341,10 +348,10 @@ export function planSchoolwork(request: SchoolworkRequest, days: PlanningDay[]):
   const dates = [...request.selectedDates].sort();
   if (request.kind === "test") {
     const dayBefore = DateTime.fromISO(request.dueDate).minus({ days: 1 }).toISODate();
-    if (dates.length !== 2 || !dayBefore || dates[1] !== dayBefore || request.totalMin < 30) {
+    if (dates.length !== 2 || !dayBefore || dates[1] !== dayBefore || request.totalMin < 2) {
       return { ok: false, reason: "test-days" };
     }
-    const refresherMin = Math.min(30, Math.max(15, Math.round(request.totalMin * 0.25 / 5) * 5));
+    const refresherMin = testRefresherMinutes(request.totalMin);
     const firstMin = request.totalMin - refresherMin;
     const first = byDate.get(dates[0]!)!;
     const refresher = byDate.get(dates[1]!)!;
@@ -364,15 +371,15 @@ export function planSchoolwork(request: SchoolworkRequest, days: PlanningDay[]):
     return { ok: false, reason: "insufficient-time", shortfallMin: request.totalMin - totalCapacity };
   }
 
-  const base = Math.floor(request.totalMin / selected.length / 5) * 5;
+  const base = Math.floor(request.totalMin / selected.length);
   const allocations = capacities.map((capacity) => Math.min(capacity, base));
   let remaining = request.totalMin - allocations.reduce((sum, minutes) => sum + minutes, 0);
   while (remaining > 0) {
     let changed = false;
     for (let i = 0; i < allocations.length && remaining > 0; i++) {
-      if (allocations[i]! + 5 > capacities[i]!) continue;
-      allocations[i] = allocations[i]! + 5;
-      remaining -= 5;
+      if (allocations[i]! + 1 > capacities[i]!) continue;
+      allocations[i] = allocations[i]! + 1;
+      remaining -= 1;
       changed = true;
     }
     if (!changed) return { ok: false, reason: "insufficient-time", shortfallMin: remaining };

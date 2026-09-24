@@ -30,6 +30,16 @@ export const schoolworkPreview = {
   plan: planSchoolwork({ id: "preview", title: "Calculus unit test", kind: "test", totalMin: 120, dueDate, selectedDates }, days),
 };
 
+const exactMinuteTotal = 7;
+const exactMinuteDates = recommendWorkdays(days, dueDate, exactMinuteTotal, "test");
+export const schoolworkExactMinutePreview = {
+  ...schoolworkPreview,
+  draft: { ...schoolworkPreview.draft, title: "Calculus quiz review", estimatedMin: exactMinuteTotal },
+  recommendedDates: exactMinuteDates,
+  plan: planSchoolwork({ id: "exact-minute-preview", title: "Calculus quiz review", kind: "test",
+    totalMin: exactMinuteTotal, dueDate, selectedDates: exactMinuteDates }, days),
+};
+
 const pressureDueDate = "2026-09-23";
 const pressureSelected = ["2026-09-22"];
 const pressureDays = days.filter((day) => day.template.date < pressureDueDate);

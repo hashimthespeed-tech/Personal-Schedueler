@@ -12,6 +12,49 @@ function available(date: string, start = 960, end = 1320): PlanningDay {
 }
 
 describe("schoolwork planning", () => {
+  it("accepts one-minute assignments and preserves the exact total", () => {
+    const result = planSchoolwork({
+      id: "quick-question", title: "Quick question", kind: "assignment", totalMin: 1,
+      dueDate: "2026-09-22", selectedDates: ["2026-09-21"],
+    }, [available("2026-09-21")]);
+    expect(result).toMatchObject({ ok: true, sessions: [
+      { date: "2026-09-21", minutes: 1, placement: { start: 960, end: 961 } },
+    ] });
+  });
+
+  it("splits odd-minute assignments without rounding or duplicating time", () => {
+    const result = planSchoolwork({
+      id: "worksheet", title: "Worksheet", kind: "assignment", totalMin: 17,
+      dueDate: "2026-09-23", selectedDates: ["2026-09-21", "2026-09-22"],
+    }, [available("2026-09-21"), available("2026-09-22")]);
+    expect(result).toMatchObject({ ok: true, sessions: [
+      { date: "2026-09-21", minutes: 9 },
+      { date: "2026-09-22", minutes: 8 },
+    ] });
+    if (result.ok) expect(result.sessions.reduce((sum, session) => sum + session.minutes, 0)).toBe(17);
+  });
+
+  it("keeps the two-day test rule for short exact-minute estimates", () => {
+    const days = [available("2026-09-21"), available("2026-09-22")];
+    expect(recommendWorkdays(days, "2026-09-23", 2, "test")).toEqual(["2026-09-21", "2026-09-22"]);
+    expect(planSchoolwork({
+      id: "quiz", title: "Quiz", kind: "test", totalMin: 2,
+      dueDate: "2026-09-23", selectedDates: ["2026-09-21", "2026-09-22"],
+    }, days)).toMatchObject({ ok: true, sessions: [
+      { date: "2026-09-21", minutes: 1, role: "study" },
+      { date: "2026-09-22", minutes: 1, role: "refresher" },
+    ] });
+  });
+
+  it("still rejects zero and fractional estimates", () => {
+    const base = { id: "work", title: "Work", kind: "assignment" as const,
+      dueDate: "2026-09-22", selectedDates: ["2026-09-21"] };
+    expect(planSchoolwork({ ...base, totalMin: 0 }, [available("2026-09-21")]))
+      .toEqual({ ok: false, reason: "invalid-duration" });
+    expect(planSchoolwork({ ...base, totalMin: 1.5 }, [available("2026-09-21")]))
+      .toEqual({ ok: false, reason: "invalid-duration" });
+  });
+
   it("recommends the latest available days before an assignment deadline", () => {
     const options = [available("2026-09-21"), available("2026-09-22"), available("2026-09-23")];
     expect(recommendWorkdays(options, "2026-09-24", 180, "assignment")).toEqual(["2026-09-22", "2026-09-23"]);

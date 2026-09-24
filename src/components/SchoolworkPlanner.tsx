@@ -96,7 +96,7 @@ export function SchoolworkPlanner({ initialDate, previewData }: { initialDate: s
           draft.kind === "test" ? "test" : "assignment");
         const refresher = DateTime.fromISO(draft.dueDate).minus({ days: 1 }).toISODate();
         setDays(available);
-        setSelected(recommended.length ? recommended : draft.kind === "test" && available.some((day) => day.date === refresher && day.availableMin >= 15) ? [refresher!] : []);
+        setSelected(recommended.length ? recommended : draft.kind === "test" && available.some((day) => day.date === refresher && day.availableMin >= 1) ? [refresher!] : []);
       } else {
         const response = await fetch("/api/schoolwork", { method: "POST", headers: { "content-type": "application/json" },
           body: JSON.stringify({ action: "options", ...draft }) });
@@ -106,7 +106,7 @@ export function SchoolworkPlanner({ initialDate, previewData }: { initialDate: s
         const recommended = data.recommendedDates ?? [];
         const refresher = DateTime.fromISO(draft.dueDate).minus({ days: 1 }).toISODate();
         setDays(available);
-        setSelected(recommended.length ? recommended : draft.kind === "test" && available.some((day) => day.date === refresher && day.availableMin >= 15) ? [refresher!] : []);
+        setSelected(recommended.length ? recommended : draft.kind === "test" && available.some((day) => day.date === refresher && day.availableMin >= 1) ? [refresher!] : []);
       }
     } catch (cause) { setError(cause instanceof Error ? cause.message : "Could not find workdays."); }
     finally { setBusy(false); }
@@ -204,7 +204,7 @@ export function SchoolworkPlanner({ initialDate, previewData }: { initialDate: s
         <div className="schoolwork-kinds" role="group" aria-label="Assignment type">{KINDS.map((kind) =>
           <button key={kind.id} type="button" className={draft.kind === kind.id ? "selected" : ""}
             onClick={() => edit({ kind: kind.id, estimatedMin: kind.minutes })}>{kind.label}</button>)}</div>
-        <div className="schoolwork-form-pair"><label>Estimated minutes<input type="number" min="15" max="600" step="5" inputMode="numeric"
+        <div className="schoolwork-form-pair"><label>Estimated minutes<input type="number" min="1" max="600" step="1" inputMode="numeric"
           value={draft.estimatedMin} onChange={(event) => edit({ estimatedMin: Number(event.target.value) })} /></label>
           <label>Due date<input type="date" min={DateTime.fromISO(initialDate).plus({ days: 1 }).toISODate()!}
             value={draft.dueDate} onChange={(event) => edit({ dueDate: event.target.value })} /></label></div>

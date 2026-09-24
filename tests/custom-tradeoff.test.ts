@@ -15,6 +15,17 @@ const request = { id: "work", title: "Urgent work", kind: "assignment" as const,
   dueDate: "2026-09-23", selectedDates: ["2026-09-22"] };
 
 describe("custom schoolwork trade-offs", () => {
+  it("fills an odd-minute shortfall without rounding the sacrifice", () => {
+    const exactRequest = { ...request, totalMin: 1 };
+    const draft = customTradeoffDraft(exactRequest, [day()]);
+    expect(draft?.requiredMinutes).toBe(1);
+    const option = buildCustomSchoolworkTradeoff(exactRequest, [day()], [
+      { sourceId: "2026-09-22:short", minutes: 1 },
+    ]);
+    expect(option?.sessions.reduce((sum, session) => sum + session.minutes, 0)).toBe(1);
+    expect(option?.costs).toMatchObject([{ blockId: "short", lostMin: 1, remainingMin: 29 }]);
+  });
+
   it("keeps equal titles separate and derives each maximum from its own duration", () => {
     const draft = customTradeoffDraft(request, [day()]);
     expect(draft).not.toBeNull();

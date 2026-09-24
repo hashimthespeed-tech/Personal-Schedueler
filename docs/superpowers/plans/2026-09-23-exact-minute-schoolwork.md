@@ -16,11 +16,11 @@
 - Modify: `tests/schoolwork.test.ts`
 - Modify: `tests/custom-tradeoff.test.ts`
 
-- [ ] **Step 1: Add failing tests**
+- [x] **Step 1: Add failing tests**
 
 Add cases proving a one-minute assignment is valid, a 17-minute assignment splits to exactly 17 minutes, a short test still uses two days with at least one minute on each, and a one-minute custom tradeoff can fill an odd shortfall.
 
-- [ ] **Step 2: Run the focused tests and confirm they fail**
+- [x] **Step 2: Run the focused tests and confirm they fail**
 
 Run: `npx vitest run tests/schoolwork.test.ts tests/custom-tradeoff.test.ts`
 
@@ -31,23 +31,23 @@ Expected: failures showing the current 15-minute minimum and five-minute allocat
 **Files:**
 - Modify: `src/core/schoolwork.ts`
 
-- [ ] **Step 1: Replace five-minute window and capacity rounding with whole-minute capacity**
+- [x] **Step 1: Replace five-minute window and capacity rounding with whole-minute capacity**
 
 Keep all existing window ordering and the 120-minute daily cap, but retain each usable integer minute.
 
-- [ ] **Step 2: Allocate and balance one minute at a time**
+- [x] **Step 2: Allocate and balance one minute at a time**
 
 Preserve the current latest-day and balanced-allocation behavior while allowing remainders from 1 through 4 minutes.
 
-- [ ] **Step 3: Preserve the test rule at short durations**
+- [x] **Step 3: Preserve the test rule at short durations**
 
 Require two days for tests with a minimum total of two minutes. Allocate an approximately 25% refresher of at least one minute and at most 30 minutes, leaving at least one minute for the earlier study day.
 
-- [ ] **Step 4: Allow exact-minute tradeoffs**
+- [x] **Step 4: Allow exact-minute tradeoffs**
 
 Keep the same sacrifice ordering and limits, but permit exact integer-minute cuts and sleep adjustments.
 
-- [ ] **Step 5: Run focused tests**
+- [x] **Step 5: Run focused tests**
 
 Run: `npx vitest run tests/schoolwork.test.ts tests/custom-tradeoff.test.ts tests/schoolwork-tradeoffs.test.ts`
 
@@ -59,19 +59,19 @@ Expected: all focused tests pass.
 - Modify: `src/app/api/schoolwork/route.ts`
 - Modify: `src/components/SchoolworkPlanner.tsx`
 
-- [ ] **Step 1: Change API validation**
+- [x] **Step 1: Change API validation**
 
 Accept integer estimates from 1 through 600 and reject zero, negatives, fractions, and values over 600.
 
-- [ ] **Step 2: Change the Due-page input**
+- [x] **Step 2: Change the Due-page input**
 
 Set the numeric input to a minimum and step of one minute. Keep presets, maximum, labels, and workflow unchanged.
 
-- [ ] **Step 3: Update test-day fallback availability**
+- [x] **Step 3: Update test-day fallback availability**
 
 Use the new one-minute threshold without changing the requirement that the day before be selected.
 
-- [ ] **Step 4: Run the full project check**
+- [x] **Step 4: Run the full project check**
 
 Run: `npm run check`
 
@@ -82,17 +82,17 @@ Expected: typecheck succeeds and every test passes.
 **Files:**
 - No source changes expected
 
-- [ ] **Step 1: Build the production bundle**
+- [x] **Step 1: Build the production bundle**
 
 Run: `npm run build`
 
 Expected: successful production build.
 
-- [ ] **Step 2: Visually verify the Due page**
+- [x] **Step 2: Visually verify the Due page**
 
 Open the app at phone and desktop sizes, enter a duration below 15 minutes, and capture both screenshots. Confirm the input, recommendations, preview, exact total, and navigation remain visually correct.
 
-- [ ] **Step 3: Obtain visual approval**
+- [x] **Step 3: Obtain visual approval**
 
 Show both screenshots to Hashim and wait for explicit approval before committing or pushing the UI change.
 

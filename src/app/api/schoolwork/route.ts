@@ -18,7 +18,7 @@ const fields = {
   courseId: z.number().int().positive(),
   title: z.string().trim().min(1).max(200),
   kind: z.enum(["homework", "reading", "project", "test"]),
-  estimatedMin: z.number().int().min(15).max(600).refine((value) => value % 5 === 0),
+  estimatedMin: z.number().int().min(1).max(600),
   dueDate: iso,
 };
 const body = z.union([

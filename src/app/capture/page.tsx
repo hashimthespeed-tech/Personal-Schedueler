@@ -1,6 +1,6 @@
 import { requireSession } from "@/lib/auth";
 import { SchoolworkPlanner } from "@/components/SchoolworkPlanner";
-import { schoolworkPressurePreview, schoolworkPreview } from "@/data/schoolwork-preview";
+import { schoolworkExactMinutePreview, schoolworkPressurePreview, schoolworkPreview } from "@/data/schoolwork-preview";
 import { today } from "@/core/clock";
 
 export const dynamic = "force-dynamic";
@@ -10,7 +10,8 @@ export default async function CapturePage({ searchParams }: { searchParams: Prom
   if (process.env.NODE_ENV === "development" && preview) {
     return <><p className="dim pt-5 text-xs">Design preview · sample data</p>
       <SchoolworkPlanner initialDate={schoolworkPreview.date}
-        previewData={preview === "pressure" ? schoolworkPressurePreview : schoolworkPreview} /></>;
+        previewData={preview === "pressure" ? schoolworkPressurePreview :
+          preview === "exact" ? schoolworkExactMinutePreview : schoolworkPreview} /></>;
   }
   await requireSession();
 

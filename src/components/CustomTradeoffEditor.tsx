@@ -48,7 +48,7 @@ export function CustomTradeoffEditor({ draft, busy, initiallyOpen = false, onApp
         const value = values[source.id] ?? 0;
         return <label key={source.id} className="custom-tradeoff-source">
           <span className="custom-tradeoff-source-head"><span><strong>{source.title}</strong><small>{dayLabel(source.date)}</small></span><b>{value} min</b></span>
-          <input type="range" min="0" max={source.maxRemovable} step="5" value={value}
+          <input type="range" min="0" max={source.maxRemovable} step="1" value={value}
             aria-label={`Minutes to take from ${source.title} on ${dayLabel(source.date)}`}
             onChange={(event) => setValues((old) => ({ ...old, [source.id]: Number(event.target.value) }))} />
           <span className="custom-tradeoff-limits">
