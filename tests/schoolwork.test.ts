@@ -3,7 +3,7 @@ import { planSchoolwork, recommendWorkdays, suggestWorkdays, type PlanningDay } 
 
 function available(date: string, start = 960, end = 1320): PlanningDay {
   return {
-    template: { date, wake: 450, bedtime: 1410, nextWake: 450, blocks: [
+    template: { date, wake: 450, workCutoff: 1410, bedtime: 1410, emergencyEnd: 1470, nextWake: 450, blocks: [
       { id: `busy-${date}`, title: "Busy", start: 450, end: start, policy: "fixed" },
       { id: `late-${date}`, title: "Late", start: end, end: 1410, policy: "fixed" },
     ] },
@@ -44,6 +44,29 @@ describe("schoolwork planning", () => {
       { date: "2026-09-21", minutes: 1, role: "study" },
       { date: "2026-09-22", minutes: 1, role: "refresher" },
     ] });
+  });
+
+  it("allows a one-day short-notice test due tomorrow with an exact one-minute total", () => {
+    const day = available("2026-09-21");
+    expect(recommendWorkdays([day], "2026-09-22", 1, "short-test")).toEqual(["2026-09-21"]);
+    expect(planSchoolwork({
+      id: "short-notice-test", title: "History test", kind: "short-test", totalMin: 1,
+      dueDate: "2026-09-22", selectedDates: ["2026-09-21"],
+    }, [day])).toMatchObject({ ok: true, sessions: [
+      { date: "2026-09-21", minutes: 1, role: "study" },
+    ] });
+  });
+
+  it("splits a short-notice test total across chosen days without a refresher or duplicated time", () => {
+    const result = planSchoolwork({
+      id: "short-notice-test", title: "History test", kind: "short-test", totalMin: 17,
+      dueDate: "2026-09-23", selectedDates: ["2026-09-21", "2026-09-22"],
+    }, [available("2026-09-21"), available("2026-09-22")]);
+    expect(result).toMatchObject({ ok: true, sessions: [
+      { date: "2026-09-21", minutes: 9, role: "study" },
+      { date: "2026-09-22", minutes: 8, role: "study" },
+    ] });
+    if (result.ok) expect(result.sessions.reduce((sum, session) => sum + session.minutes, 0)).toBe(17);
   });
 
   it("still rejects zero and fractional estimates", () => {

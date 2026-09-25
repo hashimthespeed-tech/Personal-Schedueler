@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { scoreDay, scoreRange, type AssignedTask } from "../src/core/daily-completion";
+import { recurringAssignedTasks, scoreDay, scoreRange, type AssignedTask } from "../src/core/daily-completion";
 
 const tasks: AssignedTask[] = [
   { id: "a", date: "2026-09-20", title: "Homework", status: "done" },
@@ -26,5 +26,13 @@ describe("daily task completion", () => {
 
   it("rejects invalid ranges rather than drawing a misleading graph", () => {
     expect(() => scoreRange("2026-09-22", "2026-09-21", tasks)).toThrow();
+  });
+
+  it("counts recurring commitments from their tracking start and maps saved check-offs", () => {
+    const recurring = recurringAssignedTasks("2026-09-23", "2026-09-24", [
+      { onDate: "2026-09-24", slotKey: "fajr", status: "done" },
+    ], "2026-09-24");
+    expect(recurring.some((task) => task.date === "2026-09-23")).toBe(false);
+    expect(scoreDay("2026-09-24", recurring)).toMatchObject({ assigned: 4, completed: 1, percent: 25 });
   });
 });

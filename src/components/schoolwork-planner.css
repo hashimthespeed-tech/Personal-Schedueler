@@ -39,6 +39,8 @@
 .schoolwork-tradeoff-head span { flex: none; color: var(--dim); font-size: 10px; }
 .schoolwork-tradeoffs ul { margin: 9px 0 11px; padding-left: 18px; color: var(--color-physique); font-size: 11px; line-height: 1.55; }
 .schoolwork-tradeoffs button { width: 100%; min-height: 37px; border: 1px solid var(--fg); border-radius: 8px; background: transparent; color: var(--fg); font-size: 11px; font-weight: 750; cursor: pointer; }
+.schoolwork-save-unplaced { width: 100%; min-height: 42px; margin-top: 14px; padding: 9px 12px; border: 1px solid var(--color-school); border-radius: 10px; background: color-mix(in srgb, var(--color-school) 7%, var(--card)); color: var(--color-school); font-size: 12px; font-weight: 750; cursor: pointer; }
+.schoolwork-save-unplaced:disabled { opacity: .5; cursor: wait; }
 .schoolwork-error { margin: -4px 2px; color: var(--color-physique); font-size: 12px; }
 .schoolwork-saved { margin: -4px 2px; color: var(--color-deen); font-size: 12px; }
 .schoolwork-upcoming { border-color: transparent; background: color-mix(in srgb, var(--color-school) 4%, var(--card)); }

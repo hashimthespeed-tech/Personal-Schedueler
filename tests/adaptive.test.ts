@@ -3,13 +3,16 @@ import { proposePlacements, type DayTemplate } from "../src/core/adaptive";
 
 const day: DayTemplate = {
   date: "2026-09-21",
-  wake: 450,
-  bedtime: 1410,
-  nextWake: 450,
+  wake: 360,
+  workCutoff: 1260,
+  bedtime: 1320,
+  emergencyEnd: 1365,
+  nextWake: 360,
   blocks: [
     { id: "school", title: "School", start: 510, end: 936, policy: "fixed" },
     { id: "prayer", title: "Prayer and shower", start: 960, end: 1000, policy: "protected" },
     { id: "workout", title: "Workout", start: 1020, end: 1080, policy: "flexible", minMinutes: 40, cost: "routine" },
+    { id: "wind-down", title: "Before-sleep time", start: 1260, end: 1320, policy: "flexible", minMinutes: 0, cost: "winddown" },
   ],
 };
 
@@ -40,15 +43,24 @@ describe("adaptive placement proposals", () => {
 
   it("uses sleep only for urgent next-day schoolwork and keeps at least seven hours", () => {
     const request = {
-      id: "exam", title: "Exam prep", durationMin: 60, kind: "school" as const,
-      mode: "fixed" as const, at: 1410,
+      id: "exam", title: "Exam prep", durationMin: 45, kind: "school" as const,
+      mode: "fixed" as const, at: 1320,
     };
     expect(proposePlacements(day, request)).toEqual([]);
     expect(proposePlacements(day, { ...request, urgentDueTomorrow: true })[0]).toMatchObject({
-      start: 1410, end: 1470, bedtime: 1470, remainingSleepMin: 420,
-      costs: [{ type: "sleep", lostMin: 60 }],
+      start: 1320, end: 1365, bedtime: 1365, remainingSleepMin: 435,
+      costs: [{ type: "sleep", lostMin: 45 }],
     });
-    expect(proposePlacements(day, { ...request, durationMin: 65, urgentDueTomorrow: true })).toEqual([]);
+    expect(proposePlacements(day, { ...request, durationMin: 46, urgentDueTomorrow: true })).toEqual([]);
+  });
+
+  it("stops normal work at 9 PM and reports wind-down cost only for urgent schoolwork", () => {
+    const request = { id: "late", title: "Late work", durationMin: 30, mode: "fixed" as const, at: 1275 };
+    expect(proposePlacements(day, { ...request, kind: "personal" })).toEqual([]);
+    expect(proposePlacements(day, { ...request, kind: "school" })).toEqual([]);
+    expect(proposePlacements(day, { ...request, kind: "school", urgentDueTomorrow: true })[0]?.costs).toEqual([
+      { blockId: "wind-down", title: "Before-sleep time", type: "winddown", lostMin: 30, remainingMin: 30 },
+    ]);
   });
 
   it("treats period seven as friend time offered only for schoolwork", () => {

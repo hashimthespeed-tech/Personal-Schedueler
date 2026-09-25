@@ -68,6 +68,8 @@ export const scheduledTasks = pgTable("scheduled_tasks_v2", {
   workRole: text("work_role"), // study | refresher
   kind: text("kind").notNull().default("personal"), // school | personal
   status: text("status").notNull().default("planned"), // planned | done | moved | cancelled
+  /** Actual completion day; distinguishes work finished before its scheduled slot. */
+  completedOn: date("completed_on"),
   movedToDate: date("moved_to_date"),
   approvedCosts: jsonb("approved_costs").$type<{ type: string; lostMin: number; title?: string }[]>(),
   createdAt: timestamp("created_at").notNull().defaultNow(),
@@ -95,7 +97,7 @@ export const assignments = pgTable(
     id: serial("id").primaryKey(),
     courseId: integer("course_id").references(() => courses.id),
     title: text("title").notNull(),
-    kind: text("kind").notNull().default("homework"), // homework | test | project | reading
+    kind: text("kind").notNull().default("homework"), // homework | test | short_test | project | reading
     dueDate: date("due_date"),
     estimatedMin: integer("estimated_min").notNull().default(45),
     /** how much of the course grade rides on it, 0..1 */

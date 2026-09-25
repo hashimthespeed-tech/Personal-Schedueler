@@ -32,6 +32,14 @@
 .week-overdue strong, .week-overdue small { display: block; font-size: 12px; }
 .week-overdue small { margin-top: 3px; color: var(--dim); font-size: 10px; }
 .week-overdue b { color: var(--dim); font-size: 20px; font-weight: 400; }
+.week-completed-early { margin-top: 16px; padding: 12px 13px 3px; border: 1px solid color-mix(in srgb, var(--color-deen) 24%, var(--line)); border-radius: 12px; background: color-mix(in srgb, var(--color-deen) 5%, var(--card)); }
+.week-completed-early h3 { display: flex; justify-content: space-between; margin: 0 0 5px; color: var(--color-deen); font-size: 11px; }
+.week-completed-early button { display: grid; grid-template-columns: 24px minmax(0, 1fr) 10px; width: 100%; align-items: center; gap: 9px; padding: 11px 0; border: 0; border-top: 1px solid var(--line); background: transparent; color: var(--fg); text-align: left; cursor: pointer; }
+.week-completed-early .week-task-check { border-color: var(--color-deen); background: var(--color-deen); }
+.week-completed-early strong, .week-completed-early small { display: block; font-size: 12px; }
+.week-completed-early strong { color: var(--dim); text-decoration: line-through; }
+.week-completed-early small { margin-top: 3px; color: var(--dim); font-size: 10px; }
+.week-completed-early b { color: var(--dim); font-size: 20px; font-weight: 400; }
 .week-moved { margin: 13px 0 0; color: var(--dim); font-size: 10px; line-height: 1.4; }
 .week-loading, .week-error { margin: 0; color: var(--dim); font-size: 12px; }
 .week-error { color: var(--color-physique); }

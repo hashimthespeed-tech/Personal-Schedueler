@@ -11,9 +11,9 @@ const add = z.object({
   action: z.literal("add"),
   courseId: z.number().int(),
   title: z.string().min(1).max(200),
-  kind: z.enum(["homework", "test", "project", "reading"]),
+  kind: z.enum(["homework", "test", "short_test", "project", "reading"]),
   dueDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable(),
-  estimatedMin: z.number().int().min(5).max(600),
+  estimatedMin: z.number().int().min(1).max(600),
   notes: z.string().max(1000).nullable().optional(),
 });
 

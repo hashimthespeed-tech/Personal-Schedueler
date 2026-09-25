@@ -27,7 +27,7 @@ export function previewTask(day: DayTemplate, request: QuickAddRequest, existing
   if (request.mode === "fixed" && (request.at === undefined || request.at < notBefore)) return [];
 
   const blocks = existing
-    .filter((task) => (task.status === "planned" || task.status === "done") && task.start !== null && task.end !== null)
+    .filter((task) => task.status === "planned" && task.start !== null && task.end !== null)
     .map((task) => ({ id: `task-${task.id}`, title: task.title, start: task.start!, end: task.end!, policy: "fixed" as const }));
   const proposals = proposePlacements({ ...day, blocks: [...day.blocks, ...blocks] }, {
     id: "preview", title: request.title, durationMin: request.durationMin, kind: request.kind,

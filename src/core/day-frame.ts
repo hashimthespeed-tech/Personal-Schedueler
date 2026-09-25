@@ -1,6 +1,8 @@
 import { DateTime } from "luxon";
 import { type DayTemplate, type PlanBlock } from "./adaptive";
-import { fixedCommitmentsFor, homeTimeFor, TERM_S1 } from "../data/school";
+import { fixedCommitmentsFor, homeTimeFor, PRACTICE_DAYS, TERM_S1 } from "../data/school";
+import { recurringCommitmentsFor } from "./recurring-commitments";
+import { hm } from "./types";
 
 export type SleepMode = "current" | "target";
 
@@ -9,13 +11,11 @@ export interface DayFrameOptions {
   extraBlocks?: PlanBlock[];
   /** Include optional routines only so a proposal can name their exact cost. */
   includeRoutineTradeoffs?: boolean;
-  /** Arrival time is kept open for prayer and a shower, in either order. */
-  afterSchoolPrayerMin?: number;
 }
 
-const SLEEP_TIMES: Record<SleepMode, Pick<DayTemplate, "wake" | "bedtime" | "nextWake">> = {
-  current: { wake: 7 * 60 + 30, bedtime: 23 * 60 + 30, nextWake: 7 * 60 + 30 },
-  target: { wake: 6 * 60, bedtime: 22 * 60, nextWake: 6 * 60 },
+const SLEEP_TIMES: Record<SleepMode, Pick<DayTemplate, "wake" | "workCutoff" | "bedtime" | "emergencyEnd" | "nextWake">> = {
+  current: { wake: hm("06:00"), workCutoff: hm("21:00"), bedtime: hm("22:00"), emergencyEnd: hm("22:45"), nextWake: hm("06:00") },
+  target: { wake: hm("06:00"), workCutoff: hm("21:00"), bedtime: hm("22:00"), emergencyEnd: hm("22:45"), nextWake: hm("06:00") },
 };
 
 /** Construct one date's non-negotiable frame without mutating any saved plan. */
@@ -30,12 +30,12 @@ export function buildDayFrame(date: string, options: DayFrameOptions): DayTempla
   if (schoolDay) {
     const commitments = fixedCommitmentsFor(localDate.weekday);
     const commute = commitments.find((commitment) => commitment.id.endsWith("commute-am"));
-    const wake = SLEEP_TIMES[options.sleepMode].wake;
-    if (commute && commute.start > wake) {
-      blocks.push({ id: "morning-prep", title: "Morning preparation", start: wake,
-        end: Math.min(commute.start, wake + 45), policy: "protected" });
+    if (commute && commute.start > hm("07:40")) {
+      blocks.push({ id: "morning-prep", title: "Morning preparation", start: hm("07:40"),
+        end: commute.start, policy: "protected" });
     }
     for (const commitment of commitments) {
+      if (commitment.kind === "practice") continue;
       blocks.push(commitment.workable
         ? {
             id: commitment.id,
@@ -56,11 +56,11 @@ export function buildDayFrame(date: string, options: DayFrameOptions): DayTempla
     }
 
     const home = homeTimeFor(localDate.weekday);
-    const duration = options.afterSchoolPrayerMin ?? 45;
-    if (home !== null && duration > 0) {
+    if (home !== null) {
+      const duration = PRACTICE_DAYS.includes(localDate.weekday) ? 45 : 30;
       blocks.push({
-        id: "after-school-prayer",
-        title: "Prayer and shower",
+        id: "arrival-buffer",
+        title: "Arrival, meal, and shower",
         start: home,
         end: home + duration,
         policy: "protected",
@@ -68,18 +68,32 @@ export function buildDayFrame(date: string, options: DayFrameOptions): DayTempla
     }
 
     if (options.includeRoutineTradeoffs && home !== null) {
-      const afterArrival = home + duration;
-      if (![2, 4].includes(localDate.weekday)) {
-        const workoutStart = Math.max(afterArrival, 17 * 60);
-        blocks.push({ id: "workout", title: "Workout", start: workoutStart, end: workoutStart + 60,
-          policy: "flexible", minMinutes: 40, cost: "routine" });
-      }
       blocks.push({ id: "personal-focus", title: "Personal goal time", start: 20 * 60, end: 21 * 60,
         policy: "flexible", minMinutes: 40, cost: "routine" });
-      blocks.push({ id: "wind-down", title: "Before-sleep time", start: SLEEP_TIMES[options.sleepMode].bedtime - 45,
-        end: SLEEP_TIMES[options.sleepMode].bedtime, policy: "flexible", minMinutes: 20, cost: "winddown" });
     }
   }
+
+  for (const recurring of recurringCommitmentsFor(date)) {
+    blocks.push({
+      id: `recurring-${recurring.slotKey}`,
+      title: recurring.title,
+      start: recurring.start,
+      end: recurring.end,
+      policy: recurring.plannerPolicy,
+      ...(recurring.kind === "workout" ? { minMinutes: 0, cost: "routine" as const } : {}),
+    });
+  }
+
+  blocks.push({
+    id: "wind-down",
+    title: "Before-sleep time",
+    start: hm("21:00"),
+    end: hm("22:00"),
+    policy: "flexible",
+    minMinutes: 0,
+    cost: "winddown",
+    canUseFor: "school",
+  });
 
   blocks.push(...(options.extraBlocks ?? []));
   blocks.sort((a, b) => a.start - b.start || a.end - b.end);

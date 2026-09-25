@@ -53,4 +53,21 @@ describe("quick-add task preview", () => {
       { title: "Study", durationMin: 60, kind: "school", mode: "fixed", at: 1020 }, tasks, "7", 0);
     expect(options).toEqual([]);
   });
+
+  it("allows only urgent next-day schoolwork past 9 PM and never beyond 10:45 PM", () => {
+    const normal = { title: "Late work", durationMin: 30, kind: "school" as const, mode: "fixed" as const, at: 1275 };
+    expect(previewTask(monday, normal, [], 0)).toEqual([]);
+    expect(previewTask(monday, { ...normal, urgentDueTomorrow: true }, [], 0)[0]?.costs[0]).toMatchObject({
+      type: "winddown", lostMin: 30,
+    });
+    expect(previewTask(monday, { ...normal, at: 1340, durationMin: 26, urgentDueTomorrow: true }, [], 0)).toEqual([]);
+  });
+
+  it("does not let a completed task keep blocking its old slot", () => {
+    const done: ExistingTask[] = [
+      { id: "done", title: "Already finished", start: 1100, end: 1130, status: "done" },
+    ];
+    expect(previewTask(monday, { title: "Replacement", durationMin: 30, kind: "personal",
+      mode: "fixed", at: 1100 }, done, 0)[0]).toMatchObject({ start: 1100, end: 1130 });
+  });
 });

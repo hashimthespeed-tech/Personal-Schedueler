@@ -17,7 +17,7 @@ const iso = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 const fields = {
   courseId: z.number().int().positive(),
   title: z.string().trim().min(1).max(200),
-  kind: z.enum(["homework", "reading", "project", "test"]),
+  kind: z.enum(["homework", "reading", "project", "test", "short_test"]),
   estimatedMin: z.number().int().min(1).max(600),
   dueDate: iso,
 };
@@ -26,7 +26,7 @@ const body = z.union([
   z.object({ action: z.literal("preview"), ...fields, selectedDates: z.array(iso).min(1).max(30) }),
   z.object({ action: z.literal("approve"), ...fields, selectedDates: z.array(iso).min(1).max(30),
     chosen: z.unknown().optional(), customAllocation: z.array(z.object({ sourceId: z.string().min(1).max(160),
-      minutes: z.number().int().min(0).max(480) })).max(100).optional() }),
+      minutes: z.number().int().min(0).max(480) })).max(100).optional(), saveUnscheduled: z.boolean().optional() }),
 ]);
 
 function error(message: string, status = 400) {
@@ -52,8 +52,7 @@ async function planningDays(dueDate: string): Promise<PlanningDay[]> {
 
   return dates.map((date) => {
     const frame = buildDayFrame(date, { sleepMode: "current", includeRoutineTradeoffs: true });
-    const taskBlocks = existing.filter((task) => task.onDate === date && task.startMin !== null &&
-      (task.status === "planned" || task.status === "done"))
+    const taskBlocks = existing.filter((task) => task.onDate === date && task.startMin !== null && task.status === "planned")
       .map((task) => ({ id: `task-${task.id}`, title: task.title, start: task.startMin!,
         end: task.startMin! + task.durationMin, policy: "fixed" as const }));
     return { template: { ...frame, blocks: [...frame.blocks, ...taskBlocks] },
@@ -91,7 +90,7 @@ export async function POST(request: Request) {
   if (!course) return error("Choose one of your courses.", 404);
 
   const days = await planningDays(data.dueDate);
-  const kind = data.kind === "test" ? "test" : "assignment";
+  const kind = data.kind === "test" ? "test" : data.kind === "short_test" ? "short-test" : "assignment";
   if (data.action === "options") {
     return NextResponse.json({ ok: true,
       days: suggestWorkdays(days, data.dueDate),
@@ -110,7 +109,9 @@ export async function POST(request: Request) {
     totalMin: data.estimatedMin, dueDate: data.dueDate, selectedDates: data.selectedDates }, days, data.customAllocation) : null;
   const chosenSessions = plan.ok && JSON.stringify(plan.sessions) === JSON.stringify(data.chosen) ? plan.sessions :
     tradeoffs.find((option) => JSON.stringify(option.sessions) === JSON.stringify(data.chosen))?.sessions ?? custom?.sessions;
-  if (!chosenSessions) {
+  const unscheduledDate = [...data.selectedDates].sort().at(-1);
+  const saveUnscheduled = data.saveUnscheduled === true && !plan.ok && !!unscheduledDate && unscheduledDate < data.dueDate;
+  if (!chosenSessions && !saveUnscheduled) {
     return error("The available times changed. Review the plan again.", 409);
   }
 
@@ -124,12 +125,14 @@ export async function POST(request: Request) {
       kind: data.kind, dueDate: data.dueDate, estimatedMin: data.estimatedMin, status: "open" })
       .returning({ id: assignments.id });
     if (!created) throw new Error("Assignment insert returned no id.");
-    await tx.insert(scheduledTasks).values(chosenSessions.map((session) => ({
-      title: session.role === "refresher" ? `${data.title} · refresher` : data.title,
-      onDate: session.date, startMin: session.placement.start, durationMin: session.minutes,
-      kind: "school", status: "planned", dueDate: data.dueDate,
-      assignmentId: created.id, workRole: session.role, approvedCosts: session.placement.costs,
-    })));
+    await tx.insert(scheduledTasks).values(chosenSessions ? chosenSessions.map((session) => ({
+        title: session.role === "refresher" ? `${data.title} · refresher` : data.title,
+        onDate: session.date, startMin: session.placement.start, durationMin: session.minutes,
+        kind: "school", status: "planned", dueDate: data.dueDate,
+        assignmentId: created.id, workRole: session.role, approvedCosts: session.placement.costs,
+      })) : [{ title: data.title, onDate: unscheduledDate!, startMin: null, durationMin: data.estimatedMin,
+        kind: "school", status: "planned", dueDate: data.dueDate,
+        assignmentId: created.id, workRole: "study", approvedCosts: [] }]);
     return created.id;
   });
   return NextResponse.json({ ok: true, id: assignmentId });

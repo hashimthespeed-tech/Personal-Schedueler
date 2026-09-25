@@ -4,22 +4,13 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { buildDayFrame } from "@/core/day-frame";
 import { previewTask, type TaskOption } from "@/core/task-plan";
 import type { DayTemplate } from "@/core/adaptive";
+import { mergeTodayTimeline, type TodayRecurringItem, type TodayTask } from "@/core/today-timeline";
 import { to12h } from "@/core/types";
 import "./adaptive-day-view.css";
 
-export interface DayTask {
-  id: number;
-  title: string;
-  onDate: string;
-  durationMin: number;
-  startMin: number | null;
-  kind: string;
-  status: string;
-  dueDate: string | null;
-  movedToDate: string | null;
-}
+export type DayTask = TodayTask;
 
-interface DayPayload { ok: true; date: string; frame: DayTemplate; tasks: DayTask[] }
+interface DayPayload { ok: true; date: string; frame: DayTemplate; tasks: DayTask[]; recurring: TodayRecurringItem[] }
 interface Draft { title: string; duration: string; date: string; kind: "school" | "personal"; mode: "auto" | "fixed" | "past"; time: string }
 
 function minutes(value: string) {
@@ -63,12 +54,12 @@ export function AdaptiveDayView({ initialDate, previewData }: { initialDate: str
   useEffect(() => { void load(date); }, [date, load]);
 
   const tasks = payload?.tasks ?? [];
-  const scheduled = useMemo(() => tasks.filter((task) => task.status !== "moved" && task.startMin !== null)
-    .sort((a, b) => a.startMin! - b.startMin!), [tasks]);
+  const recurring = payload?.recurring ?? [];
+  const scheduled = useMemo(() => mergeTodayTimeline(tasks, recurring), [tasks, recurring]);
   const overdue = tasks.filter((task) => (task.status === "planned" || task.status === "done") && task.startMin === null);
   const movedCount = tasks.filter((task) => task.status === "moved").length;
-  const doneCount = tasks.filter((task) => task.status === "done").length;
-  const activeCount = tasks.filter((task) => task.status === "done" || task.status === "planned").length;
+  const doneCount = tasks.filter((task) => task.status === "done").length + recurring.filter((item) => item.status === "done").length;
+  const activeCount = tasks.filter((task) => task.status === "done" || task.status === "planned").length + recurring.length;
 
   function beginAdd() {
     setMoving(null);
@@ -92,6 +83,24 @@ export function AdaptiveDayView({ initialDate, previewData }: { initialDate: str
       } else {
         const response = await fetch("/api/tasks", { method: "POST", headers: { "content-type": "application/json" },
           body: JSON.stringify({ action: "mark", id: task.id, status }) });
+        if (!response.ok) throw new Error("Could not save that check-off.");
+        await load(date);
+        window.dispatchEvent(new Event("scheduler:tasks-changed"));
+      }
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "Could not save that check-off."); }
+    finally { setBusy(false); }
+  }
+
+  async function markRecurring(item: TodayRecurringItem) {
+    setBusy(true); setError("");
+    const status = item.status === "done" ? "planned" : "done";
+    try {
+      if (previewData) {
+        setPayload((old) => old ? { ...old, recurring: old.recurring.map((entry) =>
+          entry.slotKey === item.slotKey ? { ...entry, status } : entry) } : old);
+      } else {
+        const response = await fetch("/api/tasks", { method: "POST", headers: { "content-type": "application/json" },
+          body: JSON.stringify({ action: "mark-recurring", onDate: date, slotKey: item.slotKey, status }) });
         if (!response.ok) throw new Error("Could not save that check-off.");
         await load(date);
         window.dispatchEvent(new Event("scheduler:tasks-changed"));
@@ -151,21 +160,27 @@ export function AdaptiveDayView({ initialDate, previewData }: { initialDate: str
     finally { setBusy(false); }
   }
 
-  const prayer = payload?.frame.blocks.find((block) => block.id === "after-school-prayer");
-
   return <section className="adaptive-day" aria-labelledby="adaptive-heading">
     <div className="adaptive-head"><div><p className="adaptive-eyebrow">YOUR PLAN</p><h2 id="adaptive-heading">Today&apos;s tasks</h2>
       <p>{activeCount ? `${doneCount} of ${activeCount} done` : "A clear day so far"}{movedCount ? ` · ${movedCount} moved` : ""}</p></div>
       <button type="button" className="adaptive-add" onClick={beginAdd}>+ Add</button></div>
-    {prayer && <p className="adaptive-anchor">After school: prayer + shower protected from {to12h(prayer.start)} to {to12h(prayer.end)}</p>}
     {error && !open && <p className="adaptive-error" role="alert">{error}</p>}
     {scheduled.length === 0 && overdue.length === 0 ? <div className="adaptive-empty">No tasks assigned yet. Add one with just a name and duration.</div> : null}
-    <div className="adaptive-task-list">{scheduled.map((task) => <article key={task.id} className={`adaptive-task ${task.status === "done" ? "is-done" : ""}`}>
-      <button type="button" className="adaptive-check" aria-label={`${task.status === "done" ? "Unmark" : "Complete"} ${task.title}`}
-        aria-pressed={task.status === "done"} disabled={busy} onClick={() => void mark(task)}>{task.status === "done" ? "✓" : ""}</button>
-      <div className="adaptive-task-main"><strong>{task.title}</strong><span>{to12h(task.startMin!)} · {task.durationMin} min{task.kind === "school" ? " · School" : ""}</span></div>
-      {task.status === "planned" && <button type="button" className="adaptive-move" onClick={() => beginMove(task)}>Move</button>}
-    </article>)}</div>
+    <div className="adaptive-task-list">{scheduled.map((item) => {
+      const recurringItem = item.source === "recurring" ? item : null;
+      const savedTask = item.source === "task" ? { ...item, id: item.taskId } : null;
+      const kindLabel = item.source === "recurring"
+        ? item.kind === "prayer" ? "Prayer" : item.kind === "wrestling" ? "Wrestling" : "Workout"
+        : item.kind === "school" ? "School" : "";
+      return <article key={item.id} className={`adaptive-task ${item.status === "done" ? "is-done" : ""}`}>
+        <button type="button" className="adaptive-check" aria-label={`${item.status === "done" ? "Unmark" : "Complete"} ${item.title}`}
+          aria-pressed={item.status === "done"} disabled={busy}
+          onClick={() => recurringItem ? void markRecurring(recurringItem) : savedTask ? void mark(savedTask) : undefined}>
+          {item.status === "done" ? "✓" : ""}</button>
+        <div className="adaptive-task-main"><strong>{item.title}</strong><span>{to12h(item.startMin!)} · {item.durationMin} min{kindLabel ? ` · ${kindLabel}` : ""}</span></div>
+        {savedTask?.status === "planned" && <button type="button" className="adaptive-move" onClick={() => beginMove(savedTask)}>Move</button>}
+      </article>;
+    })}</div>
     {overdue.length > 0 && <div className="adaptive-overdue"><h3>Overdue / needs a time <span>{overdue.length}</span></h3>
       {overdue.map((task) => <article key={task.id} className={`adaptive-task ${task.status === "done" ? "is-done" : ""}`}>
         <button type="button" className="adaptive-check" aria-label={`${task.status === "done" ? "Unmark" : "Complete"} ${task.title}`}

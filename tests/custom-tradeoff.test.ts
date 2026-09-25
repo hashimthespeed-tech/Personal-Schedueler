@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { buildCustomSchoolworkTradeoff, customTradeoffDraft, type PlanningDay } from "../src/core/schoolwork";
 
 function day(date = "2026-09-22"): PlanningDay {
-  return { notBefore: 450, template: { date, wake: 450, bedtime: 1410, nextWake: 450, blocks: [
+  return { notBefore: 450, template: { date, wake: 450, workCutoff: 1410, bedtime: 1410, emergencyEnd: 1470, nextWake: 450, blocks: [
     { id: "fixed-a", title: "Protected", start: 450, end: 1000, policy: "fixed" },
     { id: "short", title: "Study", start: 1000, end: 1030, policy: "flexible", minMinutes: 20, cost: "routine" },
     { id: "fixed-b", title: "Protected", start: 1030, end: 1100, policy: "fixed" },
@@ -54,11 +54,11 @@ describe("custom schoolwork trade-offs", () => {
       { sourceId: "2026-09-22:long", minutes: 15 }])).toBeNull();
   });
 
-  it("derives sleep from that night's actual plan and retains seven hours", () => {
+  it("derives all of that night's sleep as an explicit next-day emergency option", () => {
     const draft = customTradeoffDraft({ ...request, totalMin: 70 }, [day()]);
     expect(draft?.sources.find((source) => source.type === "sleep")).toEqual({
       id: "2026-09-22:sleep", date: "2026-09-22", title: "Sleep", type: "sleep",
-      originalMinutes: 480, minimumMinutes: 420, maxRemovable: 60,
+      originalMinutes: 480, minimumMinutes: 0, maxRemovable: 480,
     });
     const option = buildCustomSchoolworkTradeoff({ ...request, totalMin: 70 }, [day()], [
       { sourceId: "2026-09-22:short", minutes: 10 },
@@ -66,5 +66,18 @@ describe("custom schoolwork trade-offs", () => {
       { sourceId: "2026-09-22:sleep", minutes: 20 },
     ]);
     expect(option?.sessions.every((session) => session.placement.remainingSleepMin >= 420)).toBe(true);
+  });
+
+  it("derives a late-night sleep source from now until wake-up", () => {
+    const late = day();
+    late.notBefore = 1380;
+    late.template.bedtime = 1320;
+    late.template.nextWake = 360;
+    late.template.emergencyEnd = 1365;
+    late.template.blocks = late.template.blocks.filter((block) => block.end <= 1320);
+    const draft = customTradeoffDraft({ ...request, totalMin: 60 }, [late]);
+    expect(draft?.sources.find((source) => source.type === "sleep")).toMatchObject({
+      id: "2026-09-22:sleep", originalMinutes: 420, minimumMinutes: 0, maxRemovable: 420,
+    });
   });
 });

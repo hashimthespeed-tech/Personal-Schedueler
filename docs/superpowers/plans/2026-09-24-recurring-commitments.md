@@ -138,3 +138,24 @@ Wait for explicit approval. Do not commit, merge, push, or deploy UI files befor
 - [ ] **Step 4: Complete the approved branch**
 
 After approval, commit the source/tests/docs, fast-forward merge into `claude/peaceful-dirac-wrmq5e`, rerun `npm run check` and `npm run build`, push to GitHub, wait for Vercel Ready, and verify the production login route.
+
+### Task 6: Reclaim future time after early completion
+
+**Files:**
+- Create: `src/core/rebalance.ts`
+- Create: `tests/rebalance.test.ts`
+- Modify: `src/db/schema.ts`
+- Modify: `src/lib/schema-guard.ts`
+- Modify: `src/app/api/tasks/route.ts`
+- Modify: `src/app/api/schoolwork/route.ts`
+- Modify: `src/core/task-plan.ts`
+- Modify: `src/core/week.ts`
+- Modify: `src/components/WeekPlanner.tsx`
+
+- [ ] Record the actual completion date so a task finished before its scheduled date remains history without occupying the future timeline.
+- [ ] Reclaim the completed task's former interval automatically for planned sessions that carry approved sacrifice costs.
+- [ ] Restore sacrifice in this order: sleep, before-sleep time, routine/workout time, then friend time.
+- [ ] Split a sacrificed session when only part fits, preserving its exact total assignment minutes and reducing its cost by the moved amount.
+- [ ] Leave the opened interval blank when no planned task is sacrificing time.
+- [ ] Exclude completed tasks from future collision calculations while retaining them in completion history.
+- [ ] Verify early-completion and undo behavior, then capture Week screenshots before any commit.

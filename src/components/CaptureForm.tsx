@@ -22,6 +22,7 @@ const KINDS = [
   { id: "homework", label: "Homework", min: 45 },
   { id: "reading", label: "Reading", min: 40 },
   { id: "test", label: "Test", min: 120 },
+  { id: "short_test", label: "Short-notice test", min: 30 },
   { id: "project", label: "Project", min: 180 },
 ] as const;
 

@@ -3,12 +3,15 @@ import { and, eq } from "drizzle-orm";
 import { DateTime } from "luxon";
 import { z } from "zod";
 import { db } from "@/db/index";
-import { assignments, scheduledTasks } from "@/db/schema";
+import { assignments, routineLog, scheduledTasks } from "@/db/schema";
 import { getSession } from "@/lib/auth";
 import { today } from "@/core/clock";
 import { LA_MESA } from "@/core/prayer";
 import { buildDayFrame } from "@/core/day-frame";
 import { previewTask, previewTaskEdit, type ExistingTask, type QuickAddRequest, type TaskOption } from "@/core/task-plan";
+import { recurringCommitmentFor } from "@/core/recurring-commitments";
+import { recurringItemsForToday } from "@/core/today-timeline";
+import { rebalanceFreedSlot } from "@/core/rebalance";
 
 export const dynamic = "force-dynamic";
 
@@ -26,6 +29,8 @@ const body = z.union([
   z.object({ action: z.literal("preview"), ...choiceFields }),
   z.object({ action: z.literal("approve"), ...choiceFields, chosen: z.unknown() }),
   z.object({ action: z.literal("mark"), id: z.number().int().positive(), status: z.enum(["done", "planned"]) }),
+  z.object({ action: z.literal("mark-recurring"), onDate: iso, slotKey: z.string().min(1).max(60),
+    status: z.enum(["done", "planned"]) }),
   z.object({ action: z.literal("preview-move"), id: z.number().int().positive(), toDate: iso,
     mode: z.enum(["auto", "fixed", "past"]), at: z.number().int().min(0).max(1439).optional() }),
   z.object({ action: z.literal("approve-move"), id: z.number().int().positive(), toDate: iso,
@@ -92,8 +97,13 @@ export async function GET(request: Request) {
   if (!session.loggedIn) return error("Sign in first.", 401);
   const date = new URL(request.url).searchParams.get("date") ?? today();
   if (!validDate(date)) return error("Choose a valid date.");
-  const tasks = await db.select().from(scheduledTasks).where(eq(scheduledTasks.onDate, date));
-  return NextResponse.json({ ok: true, date, frame: buildDayFrame(date, { sleepMode: "current" }), tasks });
+  const [tasks, marks] = await Promise.all([
+    db.select().from(scheduledTasks).where(eq(scheduledTasks.onDate, date)),
+    db.select({ slotKey: routineLog.slotKey, status: routineLog.status })
+      .from(routineLog).where(eq(routineLog.onDate, date)),
+  ]);
+  return NextResponse.json({ ok: true, date, frame: buildDayFrame(date, { sleepMode: "current" }), tasks,
+    recurring: recurringItemsForToday(date, marks) });
 }
 
 export async function POST(request: Request) {
@@ -103,19 +113,73 @@ export async function POST(request: Request) {
   if (!parsed.success) return error(parsed.error.issues[0]?.message ?? "Invalid task.");
   const data = parsed.data;
 
+  if (data.action === "mark-recurring") {
+    if (!validDate(data.onDate) || !recurringCommitmentFor(data.onDate, data.slotKey)) {
+      return error("That recurring item does not exist on this date.");
+    }
+    if (data.status === "planned") {
+      await db.delete(routineLog).where(and(eq(routineLog.onDate, data.onDate), eq(routineLog.slotKey, data.slotKey)));
+    } else {
+      await db.insert(routineLog).values({ onDate: data.onDate, slotKey: data.slotKey, status: "done" })
+        .onConflictDoUpdate({ target: [routineLog.onDate, routineLog.slotKey], set: { status: "done" } });
+    }
+    return NextResponse.json({ ok: true, status: data.status });
+  }
+
   if (data.action === "mark") {
-    const [updated] = await db.update(scheduledTasks).set({ status: data.status })
-      .where(and(eq(scheduledTasks.id, data.id), eq(scheduledTasks.status, data.status === "done" ? "planned" : "done")))
-      .returning({ id: scheduledTasks.id, assignmentId: scheduledTasks.assignmentId });
-    if (!updated) return error("Task changed or was not found. Refresh and try again.", 409);
-    if (updated.assignmentId !== null) {
+    const [source] = await db.select().from(scheduledTasks).where(eq(scheduledTasks.id, data.id)).limit(1);
+    const expectedStatus = data.status === "done" ? "planned" : "done";
+    if (!source || source.status !== expectedStatus) {
+      return error("Task changed or was not found. Refresh and try again.", 409);
+    }
+    const completedToday = today();
+    const completedEarly = data.status === "done" && source.onDate > completedToday && source.startMin !== null;
+    const undoingEarly = data.status === "planned" && !!source.completedOn && source.completedOn < source.onDate;
+    const result = await db.transaction(async (tx) => {
+      const sameDay = (completedEarly || undoingEarly) ?
+        await tx.select().from(scheduledTasks).where(eq(scheduledTasks.onDate, source.onDate)) : [];
+      const oldStart = source.startMin;
+      const oldEnd = oldStart === null ? null : oldStart + source.durationMin;
+      const collision = undoingEarly && oldStart !== null && oldEnd !== null && sameDay.some((task) =>
+        task.id !== source.id && task.status === "planned" && task.startMin !== null &&
+        Math.max(oldStart, task.startMin) < Math.min(oldEnd, task.startMin + task.durationMin));
+      const [updated] = await tx.update(scheduledTasks).set({
+        status: data.status,
+        completedOn: data.status === "done" ? completedToday : null,
+        ...(collision ? { startMin: null, approvedCosts: [] } : {}),
+      }).where(and(eq(scheduledTasks.id, data.id), eq(scheduledTasks.status, expectedStatus)))
+        .returning({ id: scheduledTasks.id, assignmentId: scheduledTasks.assignmentId });
+      if (!updated) return null;
+
+      let rebalanced = 0;
+      if (completedEarly) {
+        const plan = rebalanceFreedSlot(source, sameDay);
+        const byId = new Map(sameDay.map((task) => [task.id, task]));
+        for (const update of plan.updates) {
+          await tx.update(scheduledTasks).set({ startMin: update.startMin, durationMin: update.durationMin,
+            approvedCosts: update.approvedCosts }).where(and(eq(scheduledTasks.id, update.id), eq(scheduledTasks.status, "planned")));
+        }
+        for (const split of plan.splits) {
+          const original = byId.get(split.sourceId);
+          if (!original) continue;
+          await tx.insert(scheduledTasks).values({ title: original.title, onDate: original.onDate,
+            durationMin: split.durationMin, startMin: split.startMin, dueDate: original.dueDate,
+            kind: original.kind, status: "planned", approvedCosts: split.approvedCosts,
+            assignmentId: original.assignmentId, workRole: original.workRole });
+        }
+        rebalanced = plan.updates.length + plan.splits.length;
+      }
+      return { ...updated, rebalanced, needsTime: collision };
+    });
+    if (!result) return error("Task changed or was not found. Refresh and try again.", 409);
+    if (result.assignmentId !== null) {
       const sessions = await db.select({ status: scheduledTasks.status }).from(scheduledTasks)
-        .where(eq(scheduledTasks.assignmentId, updated.assignmentId));
+        .where(eq(scheduledTasks.assignmentId, result.assignmentId));
       const active = sessions.filter((item) => item.status !== "moved" && item.status !== "cancelled");
       await db.update(assignments).set({ status: active.length > 0 && active.every((item) => item.status === "done") ? "done" : "open" })
-        .where(eq(assignments.id, updated.assignmentId));
+        .where(eq(assignments.id, result.assignmentId));
     }
-    return NextResponse.json({ ok: true });
+    return NextResponse.json({ ok: true, rebalanced: result.rebalanced, needsTime: result.needsTime });
   }
 
   if (data.action === "preview-edit" || data.action === "approve-edit") {

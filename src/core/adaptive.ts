@@ -18,7 +18,11 @@ export interface PlanBlock {
 export interface DayTemplate {
   date: string;
   wake: number;
+  /** Normal tasks must finish by this time. */
+  workCutoff: number;
   bedtime: number;
+  /** Absolute end for approved next-day urgent schoolwork. */
+  emergencyEnd: number;
   nextWake: number;
   blocks: PlanBlock[];
 }
@@ -68,7 +72,7 @@ function evaluate(day: DayTemplate, request: PlacementRequest, start: number): P
   const end = start + request.durationMin;
   const urgent = request.kind === "school" && request.urgentDueTomorrow === true;
   const sleepEnd = day.nextWake + 1440;
-  const latestEnd = urgent ? sleepEnd - MIN_SLEEP : day.bedtime;
+  const latestEnd = urgent ? Math.min(day.emergencyEnd, sleepEnd - MIN_SLEEP) : day.workCutoff;
   if (start < day.wake || end > latestEnd) return null;
 
   const costs: PlacementCost[] = [];
@@ -122,7 +126,7 @@ export function proposePlacements(day: DayTemplate, request: PlacementRequest): 
   }
 
   const urgent = request.kind === "school" && request.urgentDueTomorrow === true;
-  const latestEnd = urgent ? day.nextWake + 1440 - MIN_SLEEP : day.bedtime;
+  const latestEnd = urgent ? Math.min(day.emergencyEnd, day.nextWake + 1440 - MIN_SLEEP) : day.workCutoff;
   const first = Math.ceil(Math.max(day.wake, request.notBefore ?? day.wake) / STEP) * STEP;
   const candidates: PlacementProposal[] = [];
   for (let start = first; start + request.durationMin <= latestEnd; start += STEP) {

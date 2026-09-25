@@ -10,7 +10,7 @@ export interface PlanningDay {
 export interface SchoolworkRequest {
   id: string;
   title: string;
-  kind: "assignment" | "test";
+  kind: "assignment" | "test" | "short-test";
   totalMin: number;
   dueDate: string;
   selectedDates: string[];
@@ -30,7 +30,7 @@ export type SchoolworkPlan =
 const MAX_DAILY_SCHOOL_MIN = 120;
 
 export function cleanWindows(day: PlanningDay): { start: number; end: number }[] {
-  const end = day.template.bedtime;
+  const end = day.template.workCutoff;
   let cursor = Math.max(day.notBefore, day.template.wake);
   const windows: { start: number; end: number }[] = [];
   for (const block of [...day.template.blocks].sort((a, b) => a.start - b.start)) {
@@ -73,6 +73,25 @@ export interface CustomAllocation { sourceId: string; minutes: number }
 
 interface AvailableBlock { day: PlanningDay; block: PlanBlock; available: number }
 
+function isUrgentDay(request: SchoolworkRequest, date: string): boolean {
+  return DateTime.fromISO(request.dueDate).minus({ days: 1 }).toISODate() === date;
+}
+
+function canTradeBlock(request: SchoolworkRequest, day: PlanningDay, block: PlanBlock): boolean {
+  if (block.policy !== "flexible" || (block.canUseFor && block.canUseFor !== "school")) return false;
+  if (block.end <= day.notBefore) return false;
+  return block.cost !== "winddown" || isUrgentDay(request, day.template.date);
+}
+
+function tradeableBlockMinutes(day: PlanningDay, block: PlanBlock): {
+  originalMinutes: number; minimumMinutes: number; maxRemovable: number;
+} {
+  const passedMinutes = Math.max(0, Math.min(block.end, day.notBefore) - block.start);
+  const originalMinutes = Math.max(0, block.end - Math.max(block.start, day.notBefore));
+  const minimumMinutes = Math.max(0, (block.minMinutes ?? 0) - passedMinutes);
+  return { originalMinutes, minimumMinutes, maxRemovable: Math.max(0, originalMinutes - minimumMinutes) };
+}
+
 function directSession(day: PlanningDay, request: SchoolworkRequest, start: number, minutes: number,
   role: WorkSession["role"], costs: PlacementCost[] = []): WorkSession {
   const end = start + minutes;
@@ -112,19 +131,18 @@ export function customTradeoffDraft(request: SchoolworkRequest, days: PlanningDa
   const sources: CustomTradeoffSource[] = [];
   for (const day of selected) {
     for (const block of day.template.blocks) {
-      if (block.policy !== "flexible" || (block.canUseFor && block.canUseFor !== "school")) continue;
-      const originalMinutes = block.end - block.start;
-      const minimumMinutes = block.minMinutes ?? 0;
-      const maxRemovable = originalMinutes - minimumMinutes;
+      if (!canTradeBlock(request, day, block)) continue;
+      const { originalMinutes, minimumMinutes, maxRemovable } = tradeableBlockMinutes(day, block);
       if (maxRemovable < 1) continue;
       sources.push({ id: `${day.template.date}:${block.id}`, date: day.template.date, blockId: block.id,
         title: block.title, type: block.cost ?? "routine", originalMinutes, minimumMinutes, maxRemovable });
     }
-    const isUrgent = DateTime.fromISO(request.dueDate).minus({ days: 1 }).toISODate() === day.template.date;
+    const isUrgent = isUrgentDay(request, day.template.date);
     if (isUrgent) {
-      const originalMinutes = day.template.nextWake + 1440 - day.template.bedtime;
-      const minimumMinutes = 7 * 60;
-      const maxRemovable = originalMinutes - minimumMinutes;
+      const sleepStart = Math.max(day.template.bedtime, day.notBefore);
+      const originalMinutes = Math.max(0, day.template.nextWake + 1440 - sleepStart);
+      const minimumMinutes = 0;
+      const maxRemovable = originalMinutes;
       if (maxRemovable >= 1) sources.push({ id: `${day.template.date}:sleep`, date: day.template.date,
         title: "Sleep", type: "sleep", originalMinutes, minimumMinutes, maxRemovable });
     }
@@ -161,7 +179,7 @@ export function buildCustomSchoolworkTradeoff(request: SchoolworkRequest, days: 
       const cost: PlacementCost = { type: "sleep", title: `Sleep · ${DateTime.fromISO(source.date).toFormat("ccc")}`,
         lostMin: item.minutes, remainingMin: source.originalMinutes - item.minutes };
       costs.push(cost);
-      sessions.push(directSession(day, request, day.template.bedtime, item.minutes, "study", [cost]));
+      sessions.push(directSession(day, request, Math.max(day.template.bedtime, day.notBefore), item.minutes, "study", [cost]));
       continue;
     }
     const block = day.template.blocks.find((candidate) => candidate.id === source.blockId);
@@ -212,8 +230,8 @@ export function proposeSchoolworkTradeoffs(request: SchoolworkRequest, days: Pla
   if (base.remaining === 0) return [];
 
   const flexible = selected.flatMap((day) => day.template.blocks
-    .filter((block) => block.policy === "flexible" && (!block.canUseFor || block.canUseFor === "school"))
-    .map((block) => ({ day, block, available: block.end - block.start - (block.minMinutes ?? 0) }))
+    .filter((block) => canTradeBlock(request, day, block))
+    .map((block) => ({ day, block, available: tradeableBlockMinutes(day, block).maxRemovable }))
     .filter((item) => item.available >= 1));
   const byType = (type: PlacementCost["type"]) => flexible.filter((item) => (item.block.cost ?? "routine") === type);
   const strategies = [
@@ -237,9 +255,10 @@ export function proposeSchoolworkTradeoffs(request: SchoolworkRequest, days: Pla
     let sleep: { day: PlanningDay; minutes: number } | null = null;
     if (remaining > 0) {
       const urgentDay = [...selected].reverse().find((day) =>
-        DateTime.fromISO(request.dueDate).minus({ days: 1 }).toISODate() === day.template.date);
+        isUrgentDay(request, day.template.date));
       if (urgentDay) {
-        const capacity = Math.max(0, urgentDay.template.nextWake + 1440 - urgentDay.template.bedtime - 7 * 60);
+        const sleepStart = Math.max(urgentDay.template.bedtime, urgentDay.notBefore);
+        const capacity = Math.max(0, urgentDay.template.nextWake + 1440 - sleepStart);
         const amount = Math.min(remaining, capacity);
         if (amount >= 1) { sleep = { day: urgentDay, minutes: amount }; remaining -= amount; }
       }
@@ -259,7 +278,8 @@ export function proposeSchoolworkTradeoffs(request: SchoolworkRequest, days: Pla
     if (sleep) {
       const cost: PlacementCost = { type: "sleep", lostMin: sleep.minutes };
       costs.push(cost);
-      sessions.push(directSession(sleep.day, request, sleep.day.template.bedtime, sleep.minutes, "study", [cost]));
+      sessions.push(directSession(sleep.day, request,
+        Math.max(sleep.day.template.bedtime, sleep.day.notBefore), sleep.minutes, "study", [cost]));
     }
     sessions.sort((a, b) => a.date.localeCompare(b.date) || a.placement.start - b.placement.start);
     const signature = costs.map((cost) => `${cost.type}:${cost.blockId ?? ""}:${cost.lostMin}`).sort().join("|");
@@ -267,7 +287,12 @@ export function proposeSchoolworkTradeoffs(request: SchoolworkRequest, days: Pla
       seen.add(signature);
       const types = new Set(costs.map((cost) => cost.type));
       const sleepCost = costs.find((cost) => cost.type === "sleep");
-      const title = sleepCost ? `${strategy.title} + ${sleepCost.lostMin} min less sleep` :
+      const nonSleepTypes = new Set(costs.filter((cost) => cost.type !== "sleep").map((cost) => cost.type));
+      const exactBase = nonSleepTypes.size === 1 && nonSleepTypes.has("winddown") ? "Use before-sleep time" :
+        nonSleepTypes.size === 1 && nonSleepTypes.has("friend") ? "Use school friend time" :
+        nonSleepTypes.size === 1 && nonSleepTypes.has("routine") ? "Shorten routines" : strategy.title;
+      const title = sleepCost && types.size === 1 ? `Use ${sleepCost.lostMin} min of sleep` :
+        sleepCost ? `${exactBase} + ${sleepCost.lostMin} min less sleep` :
         types.size === 1 && types.has("friend") ? "Use school friend time" : strategy.title;
       results.push({ id: strategy.id, title, sessions, costs });
     }

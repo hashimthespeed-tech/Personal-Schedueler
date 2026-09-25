@@ -52,3 +52,51 @@ export const schoolworkPressurePreview = {
   plan: planSchoolwork({ id: "pressure-preview", title: "Calculus problem set", kind: "assignment",
     totalMin: 225, dueDate: pressureDueDate, selectedDates: pressureSelected }, pressureDays),
 };
+
+const shortNoticeDueDate = "2026-09-22";
+const shortNoticeDays = days.filter((day) => day.template.date < shortNoticeDueDate);
+const shortNoticeTotal = 37;
+const shortNoticeDates = recommendWorkdays(shortNoticeDays, shortNoticeDueDate, shortNoticeTotal, "short-test");
+export const schoolworkShortNoticePreview = {
+  ...schoolworkPreview,
+  draft: { ...schoolworkPreview.draft, title: "APUSH short-notice test", kind: "short_test" as const,
+    estimatedMin: shortNoticeTotal, dueDate: shortNoticeDueDate },
+  options: suggestWorkdays(shortNoticeDays, shortNoticeDueDate),
+  recommendedDates: shortNoticeDates,
+  plan: planSchoolwork({ id: "short-notice-preview", title: "APUSH short-notice test", kind: "short-test",
+    totalMin: shortNoticeTotal, dueDate: shortNoticeDueDate, selectedDates: shortNoticeDates }, shortNoticeDays),
+};
+
+const lateDate = "2026-09-22";
+const lateDueDate = "2026-09-23";
+const lateNotBefore = 23 * 60;
+const lateDays: PlanningDay[] = [{
+  template: buildDayFrame(lateDate, { sleepMode: "current", includeRoutineTradeoffs: true }),
+  notBefore: lateNotBefore,
+}];
+const lateSelected = [lateDate];
+export const schoolworkLatePreview = {
+  ...schoolworkPreview,
+  date: lateDate,
+  draft: { ...schoolworkPreview.draft, title: "APUSH reading due tomorrow", kind: "reading" as const,
+    estimatedMin: 60, dueDate: lateDueDate },
+  options: suggestWorkdays(lateDays, lateDueDate),
+  recommendedDates: lateSelected,
+  plan: planSchoolwork({ id: "late-preview", title: "APUSH reading due tomorrow", kind: "assignment",
+    totalMin: 60, dueDate: lateDueDate, selectedDates: lateSelected }, lateDays),
+  notBefore: lateNotBefore,
+};
+
+const ninePmNotBefore = 21 * 60;
+const ninePmDays: PlanningDay[] = [{
+  template: buildDayFrame(lateDate, { sleepMode: "current", includeRoutineTradeoffs: true }),
+  notBefore: ninePmNotBefore,
+}];
+export const schoolworkNinePmPreview = {
+  ...schoolworkLatePreview,
+  draft: { ...schoolworkLatePreview.draft, estimatedMin: 90 },
+  options: suggestWorkdays(ninePmDays, lateDueDate),
+  plan: planSchoolwork({ id: "nine-pm-preview", title: "APUSH reading due tomorrow", kind: "assignment",
+    totalMin: 90, dueDate: lateDueDate, selectedDates: lateSelected }, ninePmDays),
+  notBefore: ninePmNotBefore,
+};

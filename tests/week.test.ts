@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { buildDayFrame } from "../src/core/day-frame";
 import { mergeWeekTimeline, weekDates, type WeekTask } from "../src/core/week";
+import { recurringItemsForToday } from "../src/core/today-timeline";
 
 describe("week dates", () => {
   it("returns Monday through Sunday around a Tuesday", () => {
@@ -31,13 +32,13 @@ describe("week timeline", () => {
     expect(taskEntries.map((entry) => entry.durationMin)).toEqual([30, 60]);
   });
 
-  it("places a protected anchor before a task at the same minute", () => {
-    const anchor = frame.blocks.find((block) => block.policy === "protected")!;
+  it("does not expose internal planner blocks in the actionable timeline", () => {
     const tasks: WeekTask[] = [
-      { id: 9, title: "Collision", onDate: frame.date, durationMin: 10, startMin: anchor.start, kind: "personal", status: "planned", dueDate: null, movedToDate: null, workRole: null },
+      { id: 9, title: "Visible task", onDate: frame.date, durationMin: 10, startMin: 1107, kind: "personal", status: "planned", dueDate: null, movedToDate: null, workRole: null },
     ];
-    const atMinute = mergeWeekTimeline(frame, tasks).filter((entry) => entry.startMin === anchor.start);
-    expect(atMinute.map((entry) => entry.type)).toEqual(["protected", "task"]);
+    const entries = mergeWeekTimeline(frame, tasks);
+    expect(entries.map((entry) => String(entry.type))).not.toContain("protected");
+    expect(entries.map((entry) => entry.title)).toEqual(["Visible task"]);
   });
 
   it("separates overdue and moved history from timed entries", () => {
@@ -50,10 +51,23 @@ describe("week timeline", () => {
     expect(entries.find((entry) => entry.id === "task-11")?.type).toBe("moved");
   });
 
-  it("groups the fixed school schedule into one readable anchor", () => {
-    const entries = mergeWeekTimeline(frame, []);
-    expect(entries.filter((entry) => entry.id === "block-school-day")).toHaveLength(1);
-    expect(entries.some((entry) => entry.title === "Break")).toBe(false);
-    expect(entries.some((entry) => entry.title.startsWith("P1 "))).toBe(false);
+  it("removes a task completed early from its future timed slot", () => {
+    const tasks: WeekTask[] = [
+      { id: 12, title: "Finished early", onDate: frame.date, durationMin: 30, startMin: 1100,
+        kind: "school", status: "done", dueDate: null, movedToDate: null, workRole: "study",
+        completedOn: "2026-09-21" },
+    ];
+    const entry = mergeWeekTimeline(frame, tasks).find((item) => item.id === "task-12");
+    expect(entry).toMatchObject({ type: "completed", startMin: null, title: "Finished early" });
+  });
+
+  it("includes recurring commitments as checkable entries instead of planner anchors", () => {
+    const recurring = recurringItemsForToday(frame.date, [{ slotKey: "fajr", status: "done" }]);
+    const entries = mergeWeekTimeline(frame, [], recurring);
+    expect(entries.find((entry) => entry.title === "Fajr")).toMatchObject({
+      type: "recurring", recurring: { status: "done", slotKey: "fajr" },
+    });
+    expect(entries.some((entry) => entry.title === "Morning preparation")).toBe(false);
+    expect(entries.some((entry) => entry.title === "Before-sleep time")).toBe(false);
   });
 });

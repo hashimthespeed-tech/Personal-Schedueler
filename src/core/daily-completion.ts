@@ -1,4 +1,5 @@
 import { DateTime } from "luxon";
+import { recurringCommitmentsFor } from "./recurring-commitments";
 
 export type AssignedTaskStatus = "planned" | "done" | "moved" | "cancelled";
 
@@ -17,6 +18,29 @@ export interface DailyCompletion {
   moved: number;
   cancelled: number;
   percent: number | null;
+}
+
+export interface RecurringCompletionMark {
+  onDate: string;
+  slotKey: string;
+  status: string;
+}
+
+/** Build graph inputs without retroactively inventing saved daily task rows. */
+export function recurringAssignedTasks(from: string, through: string, marks: RecurringCompletionMark[],
+  trackingStart = from): AssignedTask[] {
+  const done = new Set(marks.filter((mark) => mark.status === "done")
+    .map((mark) => `${mark.onDate}:${mark.slotKey}`));
+  const tasks: AssignedTask[] = [];
+  for (let day = DateTime.fromISO(from); day <= DateTime.fromISO(through); day = day.plus({ days: 1 })) {
+    const date = day.toISODate()!;
+    if (date < trackingStart) continue;
+    for (const item of recurringCommitmentsFor(date)) {
+      tasks.push({ id: `recurring:${date}:${item.slotKey}`, date, title: item.title,
+        status: done.has(`${date}:${item.slotKey}`) ? "done" : "planned" });
+    }
+  }
+  return tasks;
 }
 
 export function scoreDay(date: string, tasks: AssignedTask[]): DailyCompletion {

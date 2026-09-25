@@ -6,9 +6,10 @@ import type { DayTemplate } from "@/core/adaptive";
 import { mergeWeekTimeline, type WeekTask } from "@/core/week";
 import { previewTaskEdit, type ExistingTask, type TaskOption } from "@/core/task-plan";
 import { to12h } from "@/core/types";
+import type { TodayRecurringItem } from "@/core/today-timeline";
 import "./week-planner.css";
 
-interface WeekDay { date: string; frame: DayTemplate; tasks: WeekTask[] }
+interface WeekDay { date: string; frame: DayTemplate; tasks: WeekTask[]; recurring: TodayRecurringItem[] }
 interface WeekPayload { ok: true; weekStart: string; weekEnd: string; days: WeekDay[] }
 interface EditDraft { duration: string; date: string; mode: "auto" | "fixed"; time: string }
 
@@ -65,9 +66,10 @@ export function WeekPlanner({ initialDate, previewData, previewEditId }: {
   useEffect(() => { void load(); }, [load]);
 
   const selectedDay = payload?.days.find((day) => day.date === selectedDate) ?? payload?.days[0] ?? null;
-  const entries = useMemo(() => selectedDay ? mergeWeekTimeline(selectedDay.frame, selectedDay.tasks) : [], [selectedDay]);
-  const timed = entries.filter((entry) => entry.type === "protected" || entry.type === "task");
+  const entries = useMemo(() => selectedDay ? mergeWeekTimeline(selectedDay.frame, selectedDay.tasks, selectedDay.recurring) : [], [selectedDay]);
+  const timed = entries.filter((entry) => entry.type === "task" || entry.type === "recurring");
   const overdue = entries.filter((entry) => entry.type === "overdue");
+  const completedEarly = entries.filter((entry) => entry.type === "completed");
   const moved = entries.filter((entry) => entry.type === "moved");
 
   function openEditor(task: WeekTask) {
@@ -98,6 +100,25 @@ export function WeekPlanner({ initialDate, previewData, previewEditId }: {
       }
       setEditing(null);
     } catch (cause) { setError(cause instanceof Error ? cause.message : "Could not update this task."); }
+    finally { setBusy(false); }
+  }
+
+  async function markRecurring(item: TodayRecurringItem) {
+    setBusy(true); setError("");
+    const status = item.status === "done" ? "planned" : "done";
+    try {
+      if (previewData) {
+        setPayload((old) => old ? { ...old, days: old.days.map((day) => ({ ...day,
+          recurring: day.recurring.map((entry) => entry.id === item.id ? { ...entry, status } : entry) })) } : old);
+      } else {
+        const response = await fetch("/api/tasks", { method: "POST", headers: { "content-type": "application/json" },
+          body: JSON.stringify({ action: "mark-recurring", onDate: item.onDate, slotKey: item.slotKey, status }) });
+        const data = await response.json() as { ok: boolean; error?: string };
+        if (!response.ok || !data.ok) throw new Error(data.error ?? "Could not update this item.");
+        await load();
+        window.dispatchEvent(new Event("scheduler:tasks-changed"));
+      }
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "Could not update this item."); }
     finally { setBusy(false); }
   }
 
@@ -163,7 +184,7 @@ export function WeekPlanner({ initialDate, previewData, previewEditId }: {
     {payload && <nav className="week-days" aria-label="Days this week">{payload.days.map((day) => {
       const parts = dayParts(day.date);
       const active = day.date === selectedDate;
-      const open = day.tasks.filter((task) => task.status === "planned").length;
+      const open = day.tasks.filter((task) => task.status === "planned").length + day.recurring.filter((item) => item.status === "planned").length;
       return <button key={day.date} type="button" className={active ? "active" : ""} aria-current={active ? "date" : undefined}
         onClick={() => { setSelectedDate(day.date); setEditing(null); setOptions(null); }}>
         <span>{parts.weekday}</span><strong>{parts.day}</strong><i aria-label={`${open} open tasks`}>{open ? "•" : ""}</i>
@@ -172,14 +193,19 @@ export function WeekPlanner({ initialDate, previewData, previewEditId }: {
     {error && !editing && <p className="week-error" role="alert">{error}</p>}
     {selectedDay && <section className="week-timeline" aria-labelledby="week-selected-heading">
       <div className="week-selected-head"><div><p>SELECTED DAY</p><h2 id="week-selected-heading">{longDate(selectedDay.date)}</h2></div>
-        <span>{selectedDay.tasks.filter((task) => task.status === "done").length}/{selectedDay.tasks.filter((task) => task.status === "done" || task.status === "planned").length} done</span></div>
-      <div className="week-list">{timed.map((entry) => entry.type === "protected" ? <div key={entry.id} className={`week-entry week-anchor ${entry.protected ? "is-protected" : ""}`}>
-        <time>{to12h(entry.startMin!)}</time><div><strong>{entry.title}</strong><span>{entry.durationMin} min · {entry.protected ? "Protected" : "Flexible"}</span></div>
-      </div> : <button key={entry.id} type="button" className={`week-entry week-task ${entry.task?.status === "done" ? "is-done" : ""}`}
-        onClick={() => entry.task && openEditor(entry.task)}><time>{to12h(entry.startMin!)}</time><span className="week-task-check">{entry.task?.status === "done" ? "✓" : ""}</span>
-        <span><strong>{entry.title}</strong><small>{entry.durationMin} min{entry.task?.kind === "school" ? " · School" : ""}{entry.task?.workRole === "refresher" ? " · Refresher" : ""}</small></span><b>›</b></button>)}</div>
+        <span>{selectedDay.tasks.filter((task) => task.status === "done").length + selectedDay.recurring.filter((item) => item.status === "done").length}/{selectedDay.tasks.filter((task) => task.status === "done" || task.status === "planned").length + selectedDay.recurring.length} done</span></div>
+      <div id="week-actionable-list" className="week-list">{timed.map((entry) => entry.type === "recurring" ? <button key={entry.id} type="button" disabled={busy}
+        className={`week-entry week-task ${entry.recurring?.status === "done" ? "is-done" : ""}`} onClick={() => entry.recurring && void markRecurring(entry.recurring)}>
+        <time>{to12h(entry.startMin!)}</time><span className="week-task-check">{entry.recurring?.status === "done" ? "✓" : ""}</span>
+        <span><strong>{entry.title}</strong><small>{entry.durationMin} min · {entry.recurring?.kind === "prayer" ? "Prayer" : entry.recurring?.kind === "wrestling" ? "Wrestling" : "Workout"}</small></span><b aria-hidden="true" /></button>
+        : <button key={entry.id} type="button" className={`week-entry week-task ${entry.task?.status === "done" ? "is-done" : ""}`}
+          onClick={() => entry.task && openEditor(entry.task)}><time>{to12h(entry.startMin!)}</time><span className="week-task-check">{entry.task?.status === "done" ? "✓" : ""}</span>
+          <span><strong>{entry.title}</strong><small>{entry.durationMin} min{entry.task?.kind === "school" ? " · School" : ""}{entry.task?.workRole === "refresher" ? " · Refresher" : ""}</small></span><b>›</b></button>)}</div>
       {overdue.length > 0 && <div className="week-overdue"><h3>Overdue / needs a time <span>{overdue.length}</span></h3>{overdue.map((entry) => <button key={entry.id} type="button" onClick={() => entry.task && openEditor(entry.task)}>
         <span><strong>{entry.title}</strong><small>{entry.durationMin} min · Not placed</small></span><b>›</b></button>)}</div>}
+      {completedEarly.length > 0 && <div id="completed-early" className="week-completed-early"><h3>Completed early <span>{completedEarly.length}</span></h3>
+        {completedEarly.map((entry) => <button key={entry.id} type="button" onClick={() => entry.task && openEditor(entry.task)}>
+          <span className="week-task-check">✓</span><span><strong>{entry.title}</strong><small>{entry.durationMin} min · Space reclaimed</small></span><b>›</b></button>)}</div>}
       {moved.length > 0 && <p className="week-moved">{moved.length} task{moved.length === 1 ? " was" : "s were"} moved from this day and excluded from completion.</p>}
     </section>}
     {!payload && !error && <p className="week-loading">Loading your week…</p>}
