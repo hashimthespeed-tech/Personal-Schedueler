@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { rebalanceFreedSlot, type RebalanceTask } from "../src/core/rebalance";
+import { rebalanceAfterDeletion, rebalanceFreedSlot, type RebalanceTask } from "../src/core/rebalance";
 
 function task(id: number, startMin: number, durationMin: number,
   approvedCosts: RebalanceTask["approvedCosts"]): RebalanceTask {
@@ -50,5 +50,29 @@ describe("early-completion rebalancing", () => {
     const updated = result.updates.find((item) => item.id === source.id)!;
     expect(updated.durationMin + result.splits.reduce((sum, item) => sum + item.durationMin, 0)).toBe(60);
     expect(updated.approvedCosts).toEqual([{ type: "sleep", lostMin: 40 }]);
+  });
+});
+
+describe("deletion rebalancing", () => {
+  it("reuses a planned occupied slot to restore sacrificed sleep", () => {
+    expect(rebalanceAfterDeletion(task(1, 1020, 30, []), [
+      task(2, 1380, 30, [{ type: "sleep", lostMin: 30 }]),
+    ])).toEqual({ updates: [
+      { id: 2, startMin: 1020, durationMin: 30, approvedCosts: [] },
+    ], splits: [] });
+  });
+
+  it("does not restore time when deleting completed or unplaced work", () => {
+    const sacrificed = [task(2, 1380, 30, [{ type: "sleep", lostMin: 30 }])];
+    expect(rebalanceAfterDeletion({ ...task(1, 1020, 30, []), status: "done" }, sacrificed))
+      .toEqual({ updates: [], splits: [] });
+    expect(rebalanceAfterDeletion({ ...task(1, 1020, 30, []), startMin: null }, sacrificed))
+      .toEqual({ updates: [], splits: [] });
+  });
+
+  it("does not move work backward into a slot that already passed", () => {
+    expect(rebalanceAfterDeletion(task(1, 1020, 30, []), [
+      task(2, 1380, 30, [{ type: "sleep", lostMin: 30 }]),
+    ], 1050)).toEqual({ updates: [], splits: [] });
   });
 });

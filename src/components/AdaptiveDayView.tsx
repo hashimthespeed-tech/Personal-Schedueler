@@ -6,6 +6,7 @@ import { previewTask, type TaskOption } from "@/core/task-plan";
 import type { DayTemplate } from "@/core/adaptive";
 import { mergeTodayTimeline, type TodayRecurringItem, type TodayTask } from "@/core/today-timeline";
 import { to12h } from "@/core/types";
+import { DeleteConfirm } from "./DeleteConfirm";
 import "./adaptive-day-view.css";
 
 export type DayTask = TodayTask;
@@ -28,11 +29,15 @@ function costLabel(option: TaskOption) {
   }).join(" · ");
 }
 
-export function AdaptiveDayView({ initialDate, previewData }: { initialDate: string; previewData?: DayPayload }) {
+export function AdaptiveDayView({ initialDate, previewData, previewDeleteId }: {
+  initialDate: string; previewData?: DayPayload; previewDeleteId?: number;
+}) {
   const [date, setDate] = useState(initialDate);
   const [payload, setPayload] = useState<DayPayload | null>(previewData ?? null);
   const [open, setOpen] = useState(false);
   const [moving, setMoving] = useState<DayTask | null>(null);
+  const [deleting, setDeleting] = useState<DayTask | null>(
+    previewData?.tasks.find((task) => task.id === previewDeleteId) ?? null);
   const [draft, setDraft] = useState<Draft>({ title: "", duration: "30", date: initialDate, kind: "personal", mode: "auto", time: "17:00" });
   const [options, setOptions] = useState<TaskOption[] | null>(null);
   const [busy, setBusy] = useState(false);
@@ -109,6 +114,28 @@ export function AdaptiveDayView({ initialDate, previewData }: { initialDate: str
     finally { setBusy(false); }
   }
 
+  async function deleteTask() {
+    if (!deleting) return;
+    setBusy(true); setError("");
+    try {
+      if (previewData) {
+        setPayload((old) => old ? { ...old, tasks: old.tasks.filter((task) => task.id !== deleting.id) } : old);
+      } else {
+        const response = await fetch("/api/tasks", { method: "POST", headers: { "content-type": "application/json" },
+          body: JSON.stringify({ action: "delete", id: deleting.id }) });
+        const data = await response.json() as { ok: boolean; error?: string };
+        if (!response.ok || !data.ok) throw new Error(data.error ?? "Could not delete that task.");
+        await load(date);
+        window.dispatchEvent(new Event("scheduler:tasks-changed"));
+      }
+      setDeleting(null);
+    } catch (cause) {
+      setDeleting(null);
+      setError(cause instanceof Error ? cause.message : "Could not delete that task.");
+    }
+    finally { setBusy(false); }
+  }
+
   async function preview() {
     setBusy(true); setError(""); setOptions(null);
     try {
@@ -178,7 +205,9 @@ export function AdaptiveDayView({ initialDate, previewData }: { initialDate: str
           onClick={() => recurringItem ? void markRecurring(recurringItem) : savedTask ? void mark(savedTask) : undefined}>
           {item.status === "done" ? "✓" : ""}</button>
         <div className="adaptive-task-main"><strong>{item.title}</strong><span>{to12h(item.startMin!)} · {item.durationMin} min{kindLabel ? ` · ${kindLabel}` : ""}</span></div>
-        {savedTask?.status === "planned" && <button type="button" className="adaptive-move" onClick={() => beginMove(savedTask)}>Move</button>}
+        {savedTask && <div className="adaptive-task-actions">{savedTask.status === "planned" &&
+          <button type="button" className="adaptive-move" onClick={() => beginMove(savedTask)}>Move</button>}
+          <button type="button" className="adaptive-delete" onClick={() => setDeleting(savedTask)}>Delete</button></div>}
       </article>;
     })}</div>
     {overdue.length > 0 && <div className="adaptive-overdue"><h3>Overdue / needs a time <span>{overdue.length}</span></h3>
@@ -186,7 +215,9 @@ export function AdaptiveDayView({ initialDate, previewData }: { initialDate: str
         <button type="button" className="adaptive-check" aria-label={`${task.status === "done" ? "Unmark" : "Complete"} ${task.title}`}
           aria-pressed={task.status === "done"} disabled={busy} onClick={() => void mark(task)}>{task.status === "done" ? "✓" : ""}</button>
         <div className="adaptive-task-main"><strong>{task.title}</strong><span>{task.durationMin} min · Not placed yet</span></div>
-        {task.status === "planned" && <button type="button" className="adaptive-move" onClick={() => beginMove(task)}>Place</button>}
+        <div className="adaptive-task-actions">{task.status === "planned" &&
+          <button type="button" className="adaptive-move" onClick={() => beginMove(task)}>Place</button>}
+          <button type="button" className="adaptive-delete" onClick={() => setDeleting(task)}>Delete</button></div>
       </article>)}
     </div>}
 
@@ -220,5 +251,7 @@ export function AdaptiveDayView({ initialDate, previewData }: { initialDate: str
         </div>}
       </section>
     </div>}
+    {deleting && <DeleteConfirm title={deleting.title} noun="task" busy={busy}
+      onCancel={() => setDeleting(null)} onConfirm={() => void deleteTask()} />}
   </section>;
 }

@@ -7,6 +7,7 @@ import { mergeWeekTimeline, type WeekTask } from "@/core/week";
 import { previewTaskEdit, type ExistingTask, type TaskOption } from "@/core/task-plan";
 import { to12h } from "@/core/types";
 import type { TodayRecurringItem } from "@/core/today-timeline";
+import { DeleteConfirm } from "./DeleteConfirm";
 import "./week-planner.css";
 
 interface WeekDay { date: string; frame: DayTemplate; tasks: WeekTask[]; recurring: TodayRecurringItem[] }
@@ -38,13 +39,15 @@ function costLabel(option: TaskOption) {
     `${cost.lostMin} min less ${cost.title ?? (cost.type === "friend" ? "friend time" : cost.type)}`).join(" · ");
 }
 
-export function WeekPlanner({ initialDate, previewData, previewEditId }: {
-  initialDate: string; previewData?: WeekPayload; previewEditId?: number;
+export function WeekPlanner({ initialDate, previewData, previewEditId, previewDeleteId }: {
+  initialDate: string; previewData?: WeekPayload; previewEditId?: number; previewDeleteId?: number;
 }) {
   const initialEditing = previewData?.days.flatMap((day) => day.tasks).find((task) => task.id === previewEditId) ?? null;
   const [payload, setPayload] = useState<WeekPayload | null>(previewData ?? null);
   const [selectedDate, setSelectedDate] = useState(initialDate);
   const [editing, setEditing] = useState<WeekTask | null>(initialEditing);
+  const [deleting, setDeleting] = useState<WeekTask | null>(
+    previewData?.days.flatMap((day) => day.tasks).find((task) => task.id === previewDeleteId) ?? null);
   const [draft, setDraft] = useState<EditDraft>({ duration: String(initialEditing?.durationMin ?? 30),
     date: initialEditing?.onDate ?? initialDate, mode: "auto", time: inputTime(initialEditing?.startMin ?? null) });
   const [options, setOptions] = useState<TaskOption[] | null>(null);
@@ -119,6 +122,29 @@ export function WeekPlanner({ initialDate, previewData, previewEditId }: {
         window.dispatchEvent(new Event("scheduler:tasks-changed"));
       }
     } catch (cause) { setError(cause instanceof Error ? cause.message : "Could not update this item."); }
+    finally { setBusy(false); }
+  }
+
+  async function deleteTask() {
+    if (!deleting) return;
+    setBusy(true); setError("");
+    try {
+      if (previewData) {
+        setPayload((old) => old ? { ...old, days: old.days.map((day) => ({ ...day,
+          tasks: day.tasks.filter((task) => task.id !== deleting.id) })) } : old);
+      } else {
+        const response = await fetch("/api/tasks", { method: "POST", headers: { "content-type": "application/json" },
+          body: JSON.stringify({ action: "delete", id: deleting.id }) });
+        const data = await response.json() as { ok: boolean; error?: string };
+        if (!response.ok || !data.ok) throw new Error(data.error ?? "Could not delete that task.");
+        await load();
+        window.dispatchEvent(new Event("scheduler:tasks-changed"));
+      }
+      setDeleting(null); setEditing(null);
+    } catch (cause) {
+      setDeleting(null);
+      setError(cause instanceof Error ? cause.message : "Could not delete that task.");
+    }
     finally { setBusy(false); }
   }
 
@@ -215,6 +241,7 @@ export function WeekPlanner({ initialDate, previewData, previewEditId }: {
         <div className="week-sheet-head"><div><p>EDIT THIS TASK</p><h2 id="week-edit-title">{editing.title}</h2></div><button type="button" aria-label="Close" onClick={() => setEditing(null)}>×</button></div>
         <button type="button" className={`week-complete ${editing.status === "done" ? "is-done" : ""}`} disabled={busy} onClick={() => void mark(editing)}>
           <span>{editing.status === "done" ? "✓" : ""}</span>{editing.status === "done" ? "Mark unfinished" : "Mark complete"}</button>
+        <button type="button" className="week-delete" disabled={busy} onClick={() => setDeleting(editing)}>Delete task forever</button>
         {editing.status === "planned" && <><div className="week-form"><div className="week-form-pair"><label>Minutes<input type="number" min="5" max="480" step="5" inputMode="numeric" value={draft.duration} onChange={(event) => updateDraft({ duration: event.target.value })} /></label>
           <label>Day<input type="date" value={draft.date} onChange={(event) => updateDraft({ date: event.target.value })} /></label></div>
           <div className="week-modes" role="group" aria-label="How to place this task"><button type="button" className={draft.mode === "auto" ? "selected" : ""} onClick={() => updateDraft({ mode: "auto" })}>Find a time</button>
@@ -227,5 +254,7 @@ export function WeekPlanner({ initialDate, previewData, previewEditId }: {
             <button type="button" disabled={busy} onClick={() => void approveEdit(option)}>Approve</button></div>)}</div>}</>}
       </section>
     </div>}
+    {deleting && <DeleteConfirm title={deleting.title} noun="task" busy={busy}
+      onCancel={() => setDeleting(null)} onConfirm={() => void deleteTask()} />}
   </div>;
 }

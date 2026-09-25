@@ -16,6 +16,8 @@
 .adaptive-task.is-done .adaptive-task-main strong { color: var(--dim); text-decoration: line-through; }
 .adaptive-task-main span { color: var(--dim); font-size: 11px; }
 .adaptive-move { flex: none; padding: 6px 8px; border: 0; background: transparent; color: var(--color-school); font-size: 12px; font-weight: 650; cursor: pointer; }
+.adaptive-task-actions { display: flex; flex: none; align-items: center; gap: 2px; }
+.adaptive-delete { flex: none; padding: 6px 8px; border: 0; background: transparent; color: var(--color-physique); font-size: 12px; font-weight: 650; cursor: pointer; }
 .adaptive-overdue { margin-top: 17px; padding: 1px 14px 4px; border: 1px solid color-mix(in srgb, var(--color-physique) 24%, var(--line)); border-radius: 13px; background: color-mix(in srgb, var(--color-physique) 4%, var(--card)); }
 .adaptive-overdue h3 { display: flex; justify-content: space-between; margin: 14px 0 3px; color: var(--color-physique); font-size: 12px; font-weight: 750; }
 .adaptive-error { margin: 12px 0; color: var(--color-physique); font-size: 12px; }

@@ -6,6 +6,7 @@ import { buildDayFrame } from "@/core/day-frame";
 import { buildCustomSchoolworkTradeoff, customTradeoffDraft, planSchoolwork, proposeSchoolworkTradeoffs, recommendWorkdays, suggestWorkdays, type CustomAllocation, type CustomTradeoffDraft, type PlanningDay, type SchoolworkPlan, type SchoolworkRequest, type SchoolworkTradeoff, type WorkSession } from "@/core/schoolwork";
 import { to12h } from "@/core/types";
 import { CustomTradeoffEditor } from "./CustomTradeoffEditor";
+import { DeleteConfirm } from "./DeleteConfirm";
 import "./schoolwork-planner.css";
 
 interface Course { id: number; code: string; name: string }
@@ -44,7 +45,9 @@ function previewDays(from: string, dueDate: string, todayNotBefore = 1000): Plan
   return days;
 }
 
-export function SchoolworkPlanner({ initialDate, previewData }: { initialDate: string; previewData?: PreviewData }) {
+export function SchoolworkPlanner({ initialDate, previewData, previewDeleteId }: {
+  initialDate: string; previewData?: PreviewData; previewDeleteId?: number;
+}) {
   const [courses, setCourses] = useState<Course[]>(previewData?.courses ?? []);
   const [assignments, setAssignments] = useState<SchoolAssignment[]>(previewData?.assignments ?? []);
   const [draft, setDraft] = useState<Draft>(previewData?.draft ?? { courseId: 0, title: "", kind: "homework", estimatedMin: 45,
@@ -69,6 +72,8 @@ export function SchoolworkPlanner({ initialDate, previewData }: { initialDate: s
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [saved, setSaved] = useState("");
+  const [deleting, setDeleting] = useState<SchoolAssignment | null>(
+    previewData?.assignments.find((assignment) => assignment.id === previewDeleteId) ?? null);
 
   const load = useCallback(async () => {
     if (previewData) return;
@@ -216,6 +221,27 @@ export function SchoolworkPlanner({ initialDate, previewData }: { initialDate: s
     finally { setBusy(false); }
   }
 
+  async function deleteAssignment() {
+    if (!deleting) return;
+    setBusy(true); setError("");
+    try {
+      if (previewData) {
+        setAssignments((old) => old.filter((assignment) => assignment.id !== deleting.id));
+      } else {
+        const response = await fetch("/api/schoolwork", { method: "POST", headers: { "content-type": "application/json" },
+          body: JSON.stringify({ action: "delete", id: deleting.id }) });
+        const data = await response.json() as { ok: boolean; error?: string };
+        if (!response.ok || !data.ok) throw new Error(data.error ?? "Could not delete that assignment.");
+        await load();
+        window.dispatchEvent(new Event("scheduler:tasks-changed"));
+      }
+      setDeleting(null);
+    } catch (cause) {
+      setDeleting(null);
+      setError(cause instanceof Error ? cause.message : "Could not delete that assignment.");
+    } finally { setBusy(false); }
+  }
+
   const dayBefore = DateTime.fromISO(draft.dueDate).minus({ days: 1 }).toISODate();
   return <div className="schoolwork-page">
     <header className="schoolwork-head"><p className="schoolwork-eyebrow">PLAN AHEAD</p><h1>Schoolwork</h1>
@@ -283,7 +309,10 @@ export function SchoolworkPlanner({ initialDate, previewData }: { initialDate: s
       {assignments.length === 0 ? <p className="schoolwork-intro">Nothing added yet. Your assignments will show here after you approve their plan.</p> :
         assignments.map((assignment) => <article key={assignment.id} className="schoolwork-upcoming-item"><div>
           <strong>{assignment.title}</strong><span>{courses.find((course) => course.id === assignment.courseId)?.code ?? "School"} · {assignment.kind} · due {prettyDate(assignment.dueDate)}</span></div>
-          <small>{assignment.sessions.filter((session) => session.status === "done").length}/{assignment.sessions.length} sessions</small></article>)}
+          <div className="schoolwork-upcoming-actions"><small>{assignment.sessions.filter((session) => session.status === "done").length}/{assignment.sessions.length} sessions</small>
+            <button type="button" onClick={() => setDeleting(assignment)}>Delete</button></div></article>)}
     </section>
+    {deleting && <DeleteConfirm title={deleting.title} noun="assignment" busy={busy}
+      onCancel={() => setDeleting(null)} onConfirm={() => void deleteAssignment()} />}
   </div>;
 }

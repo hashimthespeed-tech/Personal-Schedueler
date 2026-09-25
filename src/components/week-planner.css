@@ -51,6 +51,8 @@
 .week-complete { display: flex; width: 100%; align-items: center; gap: 9px; margin-bottom: 14px; padding: 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--fg); font-size: 12px; font-weight: 700; cursor: pointer; }
 .week-complete span { display: grid; place-items: center; width: 22px; height: 22px; border: 1px solid var(--line); border-radius: 7px; color: #fff; }
 .week-complete.is-done span { border-color: var(--color-deen); background: var(--color-deen); }
+.week-delete { width: 100%; min-height: 40px; margin: 0 0 14px; border: 1px solid color-mix(in srgb, var(--color-physique) 45%, var(--line)); border-radius: 10px; background: transparent; color: var(--color-physique); font-size: 11px; font-weight: 750; cursor: pointer; }
+.week-delete:disabled { opacity: .5; cursor: wait; }
 .week-form { display: flex; flex-direction: column; gap: 12px; }
 .week-form label { display: flex; flex-direction: column; gap: 6px; color: var(--dim); font-size: 11px; font-weight: 700; }
 .week-form input { width: 100%; min-height: 42px; padding: 9px 11px; border: 1px solid var(--line); border-radius: 10px; outline-color: var(--color-school); background: var(--bg); color: var(--fg); font-size: 14px; }

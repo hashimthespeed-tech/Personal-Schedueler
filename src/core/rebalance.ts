@@ -133,3 +133,11 @@ export function rebalanceFreedSlot(completed: RebalanceTask, tasks: RebalanceTas
   }
   return { updates, splits };
 }
+
+/** Deletion frees time only when unfinished work still occupied an exact slot. */
+export function rebalanceAfterDeletion(removed: RebalanceTask, tasks: RebalanceTask[], notBefore = 0): RebalanceResult {
+  if (removed.status !== "planned" || removed.startMin === null || removed.startMin < notBefore) {
+    return { updates: [], splits: [] };
+  }
+  return rebalanceFreedSlot(removed, tasks);
+}

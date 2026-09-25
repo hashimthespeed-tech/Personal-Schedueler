@@ -5,8 +5,9 @@ import { today } from "@/core/clock";
 
 export const dynamic = "force-dynamic";
 
-export default async function CapturePage({ searchParams }: { searchParams: Promise<{ preview?: string }> }) {
-  const preview = (await searchParams).preview;
+export default async function CapturePage({ searchParams }: { searchParams: Promise<{ preview?: string; delete?: string }> }) {
+  const params = await searchParams;
+  const preview = params.preview;
   if (process.env.NODE_ENV === "development" && preview) {
     return <><p className="dim pt-5 text-xs">Design preview · sample data</p>
       <SchoolworkPlanner initialDate={schoolworkPreview.date}
@@ -14,7 +15,8 @@ export default async function CapturePage({ searchParams }: { searchParams: Prom
           preview === "late" ? schoolworkLatePreview :
           preview === "nine" ? schoolworkNinePmPreview :
           preview === "short" ? schoolworkShortNoticePreview :
-          preview === "exact" ? schoolworkExactMinutePreview : schoolworkPreview} /></>;
+          preview === "exact" ? schoolworkExactMinutePreview : schoolworkPreview}
+        previewDeleteId={params.delete ? Number(params.delete) : undefined} /></>;
   }
   await requireSession();
 

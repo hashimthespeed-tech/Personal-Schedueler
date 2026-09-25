@@ -11,7 +11,7 @@ import { buildDayFrame } from "@/core/day-frame";
 import { previewTask, previewTaskEdit, type ExistingTask, type QuickAddRequest, type TaskOption } from "@/core/task-plan";
 import { recurringCommitmentFor } from "@/core/recurring-commitments";
 import { recurringItemsForToday } from "@/core/today-timeline";
-import { rebalanceFreedSlot } from "@/core/rebalance";
+import { rebalanceAfterDeletion, rebalanceFreedSlot } from "@/core/rebalance";
 
 export const dynamic = "force-dynamic";
 
@@ -29,6 +29,7 @@ const body = z.union([
   z.object({ action: z.literal("preview"), ...choiceFields }),
   z.object({ action: z.literal("approve"), ...choiceFields, chosen: z.unknown() }),
   z.object({ action: z.literal("mark"), id: z.number().int().positive(), status: z.enum(["done", "planned"]) }),
+  z.object({ action: z.literal("delete"), id: z.number().int().positive() }),
   z.object({ action: z.literal("mark-recurring"), onDate: iso, slotKey: z.string().min(1).max(60),
     status: z.enum(["done", "planned"]) }),
   z.object({ action: z.literal("preview-move"), id: z.number().int().positive(), toDate: iso,
@@ -51,6 +52,10 @@ function validDate(value: string) {
 function currentMinute() {
   const now = DateTime.now().setZone(LA_MESA.timezone);
   return now.hour * 60 + now.minute;
+}
+
+function deletionNotBefore(date: string) {
+  return date < today() ? 1440 : date === today() ? currentMinute() : 0;
 }
 
 function error(message: string, status = 400) {
@@ -124,6 +129,40 @@ export async function POST(request: Request) {
         .onConflictDoUpdate({ target: [routineLog.onDate, routineLog.slotKey], set: { status: "done" } });
     }
     return NextResponse.json({ ok: true, status: data.status });
+  }
+
+  if (data.action === "delete") {
+    const result = await db.transaction(async (tx) => {
+      const [source] = await tx.select().from(scheduledTasks).where(eq(scheduledTasks.id, data.id)).limit(1);
+      if (!source) return null;
+      await tx.delete(scheduledTasks).where(eq(scheduledTasks.id, source.id));
+      const sameDay = await tx.select().from(scheduledTasks).where(eq(scheduledTasks.onDate, source.onDate));
+      const plan = rebalanceAfterDeletion(source, sameDay, deletionNotBefore(source.onDate));
+      const byId = new Map(sameDay.map((task) => [task.id, task]));
+      for (const update of plan.updates) {
+        await tx.update(scheduledTasks).set({ startMin: update.startMin, durationMin: update.durationMin,
+          approvedCosts: update.approvedCosts }).where(and(eq(scheduledTasks.id, update.id), eq(scheduledTasks.status, "planned")));
+      }
+      for (const split of plan.splits) {
+        const original = byId.get(split.sourceId);
+        if (!original) continue;
+        await tx.insert(scheduledTasks).values({ title: original.title, onDate: original.onDate,
+          durationMin: split.durationMin, startMin: split.startMin, dueDate: original.dueDate,
+          kind: original.kind, status: "planned", approvedCosts: split.approvedCosts,
+          assignmentId: original.assignmentId, workRole: original.workRole });
+      }
+      return { id: source.id, assignmentId: source.assignmentId,
+        rebalanced: plan.updates.length + plan.splits.length };
+    });
+    if (!result) return error("Task was not found.", 404);
+    if (result.assignmentId !== null) {
+      const sessions = await db.select({ status: scheduledTasks.status }).from(scheduledTasks)
+        .where(eq(scheduledTasks.assignmentId, result.assignmentId));
+      const active = sessions.filter((item) => item.status !== "moved" && item.status !== "cancelled");
+      await db.update(assignments).set({ status: active.length > 0 && active.every((item) => item.status === "done") ? "done" : "open" })
+        .where(eq(assignments.id, result.assignmentId));
+    }
+    return NextResponse.json({ ok: true, id: result.id, rebalanced: result.rebalanced });
   }
 
   if (data.action === "mark") {

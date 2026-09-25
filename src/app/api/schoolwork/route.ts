@@ -10,6 +10,7 @@ import { LA_MESA } from "@/core/prayer";
 import { buildDayFrame } from "@/core/day-frame";
 import { buildCustomSchoolworkTradeoff, customTradeoffDraft, planSchoolwork, proposeSchoolworkTradeoffs,
   recommendWorkdays, suggestWorkdays, type PlanningDay } from "@/core/schoolwork";
+import { rebalanceAfterDeletion } from "@/core/rebalance";
 
 export const dynamic = "force-dynamic";
 
@@ -22,6 +23,7 @@ const fields = {
   dueDate: iso,
 };
 const body = z.union([
+  z.object({ action: z.literal("delete"), id: z.number().int().positive() }),
   z.object({ action: z.literal("options"), ...fields }),
   z.object({ action: z.literal("preview"), ...fields, selectedDates: z.array(iso).min(1).max(30) }),
   z.object({ action: z.literal("approve"), ...fields, selectedDates: z.array(iso).min(1).max(30),
@@ -41,6 +43,10 @@ function validDate(value: string) {
 function minuteNow() {
   const local = DateTime.now().setZone(LA_MESA.timezone);
   return local.hour * 60 + local.minute;
+}
+
+function deletionNotBefore(date: string) {
+  return date < today() ? 1440 : date === today() ? minuteNow() : 0;
 }
 
 async function planningDays(dueDate: string): Promise<PlanningDay[]> {
@@ -85,6 +91,41 @@ export async function POST(request: Request) {
   const parsed = body.safeParse(await request.json());
   if (!parsed.success) return error(parsed.error.issues[0]?.message ?? "Invalid assignment.");
   const data = parsed.data;
+  if (data.action === "delete") {
+    const result = await db.transaction(async (tx) => {
+      const [source] = await tx.select().from(assignments).where(eq(assignments.id, data.id)).limit(1);
+      if (!source) return null;
+      const sessions = await tx.select().from(scheduledTasks)
+        .where(eq(scheduledTasks.assignmentId, source.id));
+      await tx.delete(scheduledTasks).where(eq(scheduledTasks.assignmentId, source.id));
+      await tx.delete(assignments).where(eq(assignments.id, source.id));
+
+      let rebalanced = 0;
+      const ordered = [...sessions].sort((a, b) => a.onDate.localeCompare(b.onDate) ||
+        (a.startMin ?? Number.MAX_SAFE_INTEGER) - (b.startMin ?? Number.MAX_SAFE_INTEGER));
+      for (const removed of ordered) {
+        const sameDay = await tx.select().from(scheduledTasks).where(eq(scheduledTasks.onDate, removed.onDate));
+        const plan = rebalanceAfterDeletion(removed, sameDay, deletionNotBefore(removed.onDate));
+        const byId = new Map(sameDay.map((task) => [task.id, task]));
+        for (const update of plan.updates) {
+          await tx.update(scheduledTasks).set({ startMin: update.startMin, durationMin: update.durationMin,
+            approvedCosts: update.approvedCosts }).where(and(eq(scheduledTasks.id, update.id), eq(scheduledTasks.status, "planned")));
+        }
+        for (const split of plan.splits) {
+          const original = byId.get(split.sourceId);
+          if (!original) continue;
+          await tx.insert(scheduledTasks).values({ title: original.title, onDate: original.onDate,
+            durationMin: split.durationMin, startMin: split.startMin, dueDate: original.dueDate,
+            kind: original.kind, status: "planned", approvedCosts: split.approvedCosts,
+            assignmentId: original.assignmentId, workRole: original.workRole });
+        }
+        rebalanced += plan.updates.length + plan.splits.length;
+      }
+      return { id: source.id, deletedSessions: sessions.length, rebalanced };
+    });
+    if (!result) return error("Assignment was not found.", 404);
+    return NextResponse.json({ ok: true, ...result });
+  }
   if (!validDate(data.dueDate) || data.dueDate <= today()) return error("Choose a future due date.");
   const [course] = await db.select().from(courses).where(eq(courses.id, data.courseId)).limit(1);
   if (!course) return error("Choose one of your courses.", 404);

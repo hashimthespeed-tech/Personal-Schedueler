@@ -17,12 +17,14 @@ export const dynamic = "force-dynamic";
  * happened. The whole loop is here: report last night, then tick or cross the
  * seven things that are scored.
  */
-export default async function TodayPage({ searchParams }: { searchParams: Promise<{ preview?: string }> }) {
-  if (process.env.NODE_ENV === "development" && (await searchParams).preview === "1") {
+export default async function TodayPage({ searchParams }: { searchParams: Promise<{ preview?: string; delete?: string }> }) {
+  const params = await searchParams;
+  if (process.env.NODE_ENV === "development" && params.preview === "1") {
     return <div className="space-y-5 pt-6">
       <p className="dim text-xs">Design preview · sample data</p>
       <DailyCompletionGraph previewData={completionPreview} />
-      <AdaptiveDayView initialDate={tasksPreview.date} previewData={{ ok: true, ...tasksPreview, tasks: [...tasksPreview.tasks] }} />
+      <AdaptiveDayView initialDate={tasksPreview.date} previewData={{ ok: true, ...tasksPreview, tasks: [...tasksPreview.tasks] }}
+        previewDeleteId={params.delete ? Number(params.delete) : undefined} />
     </div>;
   }
   await requireSession();
